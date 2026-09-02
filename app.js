@@ -423,7 +423,6 @@ function enviarWhatsApp() {
     let url = `https://api.whatsapp.com/send?phone=${numeroFormatado}&text=${encodeURIComponent(texto)}`;
     window.open(url, '_blank');
 }
-
 function gerarPDF() {
     if(!osAtual) return;
     
