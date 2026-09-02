@@ -467,7 +467,3 @@ function gerarPDF() {
         });
     }, 100);
 }
-    html2pdf().set(opt).from(molde).save().then(() => {
-        wrapper.style.display = 'none'; // Esconde o molde novamente após o download
-    });
-}
