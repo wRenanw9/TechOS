@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TechOS | Assistência Técnica</title>
+    
+    <!-- FONTES -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- SUPABASE E HTML2PDF (Para gerar o PDF) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <!-- Configuração do banco (mesmo padrão do seu app anterior) -->
+    <script src="config.js"></script>
+</head>
+<body id="body-app">
+    
+    <!-- TELA INICIAL (LOGIN) -->
+    <div id="auth-container" style="padding: 20px;">
+        <h1 style="margin-top: 20px; color: var(--primary);">TechOS</h1>
+        <p class="subtitle">Gestão Inteligente de Assistência Técnica</p>
+        
+        <div class="card">
+            <h2 style="margin-bottom: 15px;">Acesso ao Sistema</h2>
+            <input type="email" id="auth-email" placeholder="E-mail">
+            <input type="password" id="auth-password" placeholder="Senha">
+            <button onclick="fazerLogin()">Entrar</button>
+            <div id="auth-msg" style="margin-top: 15px; font-size: 14px; text-align: center;"></div>
+        </div>
+    </div>
+
+    <!-- APLICATIVO PRINCIPAL -->
+    <div id="app-container" style="display: none;">
+        
+        <div class="top-bar">
+            <h1 id="top-bar-title">TechOS</h1>
+            <div class="top-actions">
+                <div class="status-nuvem" id="status-db">Online</div>
+                <button class="btn-sair" onclick="fazerLogout()">Sair</button>
+            </div>
+        </div>
+
+        <!-- ABA 1: PAINEL (DASHBOARD) -->
+        <div id="view-dashboard" class="page-view active">
+            <h2>Resumo Rápido</h2>
+            <div class="dash-grid">
+                <div class="dash-card">
+                    <div class="dash-titulo">OS Abertas</div>
+                    <div class="dash-valor" id="dash-os-abertas">0</div>
+                </div>
+                <div class="dash-card">
+                    <div class="dash-titulo">Aguardando Aprovação</div>
+                    <div class="dash-valor" style="color: var(--warning);" id="dash-os-orcamento">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA 2: CLIENTES -->
+        <div id="view-clientes" class="page-view">
+            <div class="card">
+                <h2>Novo Cliente</h2>
+                <input type="text" id="cliente-nome" placeholder="Nome do Cliente">
+                <input type="text" id="cliente-whatsapp" placeholder="WhatsApp (Ex: 71999999999)">
+                <button onclick="salvarCliente()">Salvar Cliente</button>
+            </div>
+            <div class="card">
+                <h2>Meus Clientes</h2>
+                <div id="lista-clientes">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- ABA 3: ESTOQUE (PEÇAS E SERVIÇOS) -->
+        <div id="view-estoque" class="page-view">
+            <div class="card">
+                <h2>Cadastrar Item</h2>
+                <input type="text" id="estoque-nome" placeholder="Nome (Ex: SSD 480GB ou Formatação)">
+                <div class="linha-inputs">
+                    <select id="estoque-tipo">
+                        <option value="Peça">Peça</option>
+                        <option value="Serviço">Serviço</option>
+                    </select>
+                    <input type="number" id="estoque-garantia" placeholder="Garantia (Dias)" value="90">
+                </div>
+                <div class="linha-inputs">
+                    <input type="number" id="estoque-custo" placeholder="Custo R$">
+                    <input type="number" id="estoque-venda" placeholder="Venda R$">
+                </div>
+                <button onclick="salvarEstoque()">Salvar no Estoque</button>
+            </div>
+            <div class="card">
+                <h2>Itens Cadastrados</h2>
+                <div id="lista-estoque">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- ABA 4: ORDENS DE SERVIÇO (OS) -->
+        <div id="view-os" class="page-view">
+            <div class="card">
+                <h2>Abrir Nova OS</h2>
+                <select id="os-cliente"><!-- Preenchido via JS --></select>
+                <input type="text" id="os-aparelho" placeholder="Aparelho (Ex: Notebook Dell)">
+                <input type="text" id="os-defeito" placeholder="Defeito Relatado">
+                <button onclick="abrirOS()">Gerar Ordem de Serviço</button>
+            </div>
+            
+            <div class="card">
+                <h2>Gestão de OS</h2>
+                <div id="lista-os">Carregando...</div>
+            </div>
+        </div>
+
+        <!-- NAVEGAÇÃO INFERIOR -->
+        <nav class="bottom-nav">
+            <div class="nav-item active" onclick="mudarAba('view-dashboard')" id="nav-dashboard">
+                <div class="nav-icon">📊</div>
+                <span>Painel</span>
+            </div>
+            <div class="nav-item" onclick="mudarAba('view-clientes')" id="nav-clientes">
+                <div class="nav-icon">👥</div>
+                <span>Clientes</span>
+            </div>
+            <div class="nav-item" onclick="mudarAba('view-estoque')" id="nav-estoque">
+                <div class="nav-icon">📦</div>
+                <span>Estoque</span>
+            </div>
+            <div class="nav-item" onclick="mudarAba('view-os')" id="nav-os">
+                <div class="nav-icon">📋</div>
+                <span>Ordens (OS)</span>
+            </div>
+        </nav>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MOLDE OCULTO PARA GERAÇÃO DO PDF (A4)      -->
+    <!-- ========================================== -->
+    <div style="display: none;">
+        <div id="pdf-molde" style="padding: 40px; background: white; color: black; font-family: Arial, sans-serif;">
+            <div style="border-bottom: 3px solid #2c3e50; padding-bottom: 10px; margin-bottom: 20px;">
+                <h1 style="color: #2c3e50; margin: 0; font-size: 24pt;">TechOS - Assistência</h1>
+                <p style="margin: 5px 0 0 0; color: #7f8c8d; font-size: 12pt;" id="pdf-os-numero">Orçamento #000</p>
+            </div>
+            
+            <table style="width: 100%; margin-bottom: 20px; font-size: 12pt;">
+                <tr><td style="font-weight: bold; width: 100px;">Cliente:</td><td id="pdf-cliente">...</td></tr>
+                <tr><td style="font-weight: bold;">Aparelho:</td><td id="pdf-aparelho">...</td></tr>
+                <tr><td style="font-weight: bold;">Defeito:</td><td id="pdf-defeito">...</td></tr>
+            </table>
+
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12pt;">
+                <thead>
+                    <tr style="background-color: #2c3e50; color: white; text-align: left;">
+                        <th style="padding: 10px;">Item / Serviço</th>
+                        <th style="padding: 10px;">Qtd</th>
+                        <th style="padding: 10px;">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody id="pdf-itens-tabela">
+                    <!-- Preenchido via JS -->
+                </tbody>
+                <tfoot>
+                    <tr style="background-color: #ecf0f1; font-weight: bold; font-size: 14pt;">
+                        <td colspan="2" style="text-align: right; padding: 10px;">TOTAL:</td>
+                        <td style="padding: 10px;" id="pdf-total">R$ 0,00</td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <div style="background-color: #e8f6f3; border-left: 4px solid #1abc9c; padding: 12px; font-size: 11pt;">
+                <strong>🛡️ Garantia:</strong> <span id="pdf-garantia">90 dias</span><br>
+                <em>Válida a partir da retirada. Não cobre mau uso ou danos físicos.</em>
+            </div>
+        </div>
+    </div>
+
+    <!-- MOTOR DO APP -->
+    <script src="app.js"></script>
+</body>
+</html>
