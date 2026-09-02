@@ -1,439 +1,456 @@
-// ==========================================
-// CONFIGURAÇÕES GERAIS E BANCO DE DADOS
-// ==========================================
-let db;
+// INICIALIZAÇÃO
+const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 let currentUser = null;
-let osAtual = null; // Guarda a OS que está aberta na tela no momento
+let osAtual = null; // Armazena a OS que está aberta nos detalhes
+let clienteEditId = null; // Controle de edição
+let estoqueEditId = null; // Controle de edição
 
-window.onload = async function() {
-    if(typeof supabaseUrl === 'undefined' || typeof supabaseKey === 'undefined') { 
-        alert("Erro crítico: arquivo config.js ausente. Crie o config.js com as chaves do Supabase!"); 
-        return; 
-    }
-    db = window.supabase.createClient(supabaseUrl, supabaseKey);
-    verificarSessao();
-};
-
-// ==========================================
-// AUTENTICAÇÃO
-// ==========================================
-async function verificarSessao() { 
+window.onload = async () => {
     const { data: { session } } = await db.auth.getSession();
     if (session) {
         currentUser = session.user;
-        mostrarApp();
-    } else {
-        mostrarLogin();
+        iniciarApp();
     }
-}
+};
 
-async function fazerLogin() { 
-    const email = document.getElementById('auth-email').value;
-    const password = document.getElementById('auth-password').value; 
-    const msg = document.getElementById('auth-msg');
+// AUTENTICAÇÃO
+async function fazerLogin() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('senha').value;
+    const msg = document.getElementById('msg-login');
     
-    msg.style.color = "var(--primary)";
     msg.innerText = "Conectando ao TechOS...";
-    
     const { data, error } = await db.auth.signInWithPassword({ email, password });
-    if (error) { 
-        msg.style.color = "var(--danger)"; 
-        msg.innerText = "Usuário ou senha inválidos."; 
-        return;
-    }
-    currentUser = data.user;
-    mostrarApp();
-}
-
-async function fazerLogout() { 
-    await db.auth.signOut();
-    currentUser = null;
-    mostrarLogin();
-}
-
-function mostrarApp() { 
-    document.getElementById('auth-container').style.display = 'none'; 
-    document.getElementById('app-container').style.display = 'block'; 
-    mudarAba('view-dashboard');
-}
-
-function mostrarLogin() { 
-    document.getElementById('auth-container').style.display = 'block'; 
-    document.getElementById('app-container').style.display = 'none'; 
-}
-
-// ==========================================
-// NAVEGAÇÃO E ATUALIZAÇÃO DE TELAS
-// ==========================================
-function mudarAba(viewId) {
-    document.querySelectorAll('.page-view').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     
-    document.getElementById(viewId).style.display = 'block';
-    
-    let navId = viewId.replace('view-', 'nav-');
-    let navEl = document.getElementById(navId);
-    if(navEl) navEl.classList.add('active');
-    
-    window.scrollTo(0, 0);
-
-    // Atualiza os dados dependendo da aba clicada
-    if(viewId === 'view-dashboard') carregarDashboard();
-    if(viewId === 'view-clientes') carregarClientes();
-    if(viewId === 'view-estoque') carregarEstoque();
-    if(viewId === 'view-os') {
-        carregarClientesSelect();
-        carregarOS();
-    }
-}
-
-// ==========================================
-// 1. ABA: PAINEL (DASHBOARD)
-// ==========================================
-async function carregarDashboard() {
-    if(!currentUser) return;
-    document.getElementById('status-db').innerText = "Sincronizando...";
-    
-    const { data, error } = await db.from('ordens_servico').select('status').eq('user_id', currentUser.id);
     if (error) {
-        document.getElementById('status-db').innerText = "Erro DB";
-        document.getElementById('status-db').style.backgroundColor = "var(--danger)";
-        return;
+        msg.innerText = "Usuário ou senha inválidos.";
+    } else {
+        currentUser = data.user;
+        iniciarApp();
     }
+}
+
+async function fazerLogout() {
+    await db.auth.signOut();
+    window.location.reload();
+}
+
+function iniciarApp() {
+    document.getElementById('auth-view').style.display = 'none';
+    document.getElementById('app-view').style.display = 'block';
+    carregarPerfilLoja(); // Carrega os dados da empresa pro PDF
+    carregarDadosBase();
+}
+
+function mudarAba(idAba, elementoNav) {
+    document.querySelectorAll('.page-view').forEach(aba => aba.classList.remove('active'));
+    document.getElementById(idAba).classList.add('active');
     
-    let osAbertas = 0;
-    let osAguardando = 0;
-    
-    data.forEach(os => {
-        if(os.status !== 'Entregue') osAbertas++;
-        if(os.status === 'Orçamento Pendente' || os.status === 'Aguardando Aprovação') osAguardando++;
-    });
-    
-    document.getElementById('dash-os-abertas').innerText = osAbertas;
-    document.getElementById('dash-os-orcamento').innerText = osAguardando;
-    
-    document.getElementById('status-db').innerText = "Online";
-    document.getElementById('status-db').style.backgroundColor = "var(--success)";
+    document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+    if(elementoNav) elementoNav.classList.add('active');
+
+    // Se mudar de aba e for a aba OS, garante que mostre a lista base e esconda os detalhes
+    if(idAba === 'view-os') voltarListaOS();
+}
+
+async function carregarDadosBase() {
+    await carregarClientes();
+    await carregarEstoque();
+    await carregarListaOS();
 }
 
 // ==========================================
-// 2. ABA: CLIENTES
+// MÓDULO 1: CLIENTES (Com Busca e Edição)
 // ==========================================
+async function carregarClientes() {
+    const { data, error } = await db.from('clientes').select('*').order('nome');
+    if (error) return console.error(error);
+    
+    const lista = document.getElementById('lista-clientes');
+    const selectOS = document.getElementById('os-cliente');
+    
+    lista.innerHTML = '';
+    selectOS.innerHTML = '<option value="">Selecione o Cliente...</option>';
+
+    data.forEach(cli => {
+        // Lista
+        lista.innerHTML += `
+            <div class="list-item item-cliente">
+                <div>
+                    <strong>${cli.nome}</strong><br>
+                    <small style="color: var(--text);">${cli.whatsapp || 'Sem número'}</small>
+                </div>
+                <div class="item-actions">
+                    <button class="btn-small btn-outline" onclick="prepararEdicaoCliente('${cli.id}', '${cli.nome}', '${cli.whatsapp || ''}')">✏️</button>
+                    <button class="btn-small btn-danger" onclick="excluirCliente('${cli.id}')">X</button>
+                </div>
+            </div>`;
+        
+        // Select da OS
+        selectOS.innerHTML += `<option value="${cli.id}">${cli.nome}</option>`;
+    });
+}
+
+function filtrarClientes() {
+    let termo = document.getElementById('busca-cliente').value.toLowerCase();
+    document.querySelectorAll('.item-cliente').forEach(el => {
+        let texto = el.innerText.toLowerCase();
+        el.style.display = texto.includes(termo) ? 'flex' : 'none';
+    });
+}
+
+function prepararEdicaoCliente(id, nome, whatsapp) {
+    clienteEditId = id;
+    document.getElementById('cli-nome').value = nome;
+    document.getElementById('cli-zap').value = whatsapp;
+    document.getElementById('titulo-form-cliente').innerText = "Editar Cliente";
+    document.getElementById('btn-salvar-cli').innerText = "Atualizar Cliente";
+    document.getElementById('btn-cancelar-cli').style.display = "inline-block";
+    window.scrollTo(0,0);
+}
+
+function cancelarEdicaoCliente() {
+    clienteEditId = null;
+    document.getElementById('cli-nome').value = "";
+    document.getElementById('cli-zap').value = "";
+    document.getElementById('titulo-form-cliente').innerText = "Novo Cliente";
+    document.getElementById('btn-salvar-cli').innerText = "Cadastrar Cliente";
+    document.getElementById('btn-cancelar-cli').style.display = "none";
+}
+
 async function salvarCliente() {
-    const nome = document.getElementById('cliente-nome').value.trim();
-    const whatsapp = document.getElementById('cliente-whatsapp').value.trim();
+    const nome = document.getElementById('cli-nome').value;
+    const whatsapp = document.getElementById('cli-zap').value;
+    if (!nome) return alert('Preencha o nome do cliente!');
     
-    if(!nome) return alert("O nome do cliente é obrigatório!");
+    const btn = document.getElementById('btn-salvar-cli');
+    btn.disabled = true; btn.innerText = "Salvando...";
+
+    if (clienteEditId) {
+        await db.from('clientes').update({ nome, whatsapp }).eq('id', clienteEditId);
+    } else {
+        await db.from('clientes').insert([{ user_id: currentUser.id, nome, whatsapp }]);
+    }
     
-    const { error } = await db.from('clientes').insert([{ 
-        nome, whatsapp, user_id: currentUser.id 
-    }]);
-    
-    if(error) return alert("Erro ao salvar: " + error.message);
-    
-    document.getElementById('cliente-nome').value = '';
-    document.getElementById('cliente-whatsapp').value = '';
+    cancelarEdicaoCliente();
+    await carregarClientes();
+    btn.disabled = false;
+}
+
+async function excluirCliente(id) {
+    if(!confirm("Apagar este cliente?")) return;
+    await db.from('clientes').delete().eq('id', id);
     carregarClientes();
 }
 
-async function carregarClientes() {
-    const { data, error } = await db.from('clientes').select('*').eq('user_id', currentUser.id).order('nome', { ascending: true });
-    const lista = document.getElementById('lista-clientes');
+// ==========================================
+// MÓDULO 2: ESTOQUE (Com Busca e Edição)
+// ==========================================
+async function carregarEstoque() {
+    const { data, error } = await db.from('estoque').select('*').order('nome');
+    if (error) return console.error(error);
     
-    if(error || !data || data.length === 0) {
-        lista.innerHTML = "<p style='color: var(--text-muted); font-size: 14px;'>Nenhum cliente cadastrado.</p>";
-        return;
-    }
+    const lista = document.getElementById('lista-estoque');
+    const selectItemOS = document.getElementById('add-os-item');
     
-    let html = '';
-    data.forEach(c => {
-        html += `
-        <div class="lista-item">
-            <div class="item-info">
-                <span class="item-title">${c.nome}</span>
-                <span class="item-sub">WhatsApp: ${c.whatsapp || 'Não informado'}</span>
-            </div>
-        </div>`;
+    lista.innerHTML = '';
+    selectItemOS.innerHTML = '<option value="">Selecione do Estoque...</option>';
+
+    data.forEach(item => {
+        lista.innerHTML += `
+            <div class="list-item item-estoque">
+                <div>
+                    <strong>${item.nome}</strong><br>
+                    <small>Venda: R$ ${item.preco.toFixed(2)} | Custo: R$ ${item.custo.toFixed(2)}</small>
+                </div>
+                <div class="item-actions">
+                    <button class="btn-small btn-outline" onclick="prepararEdicaoEstoque('${item.id}', '${item.nome}', ${item.preco}, ${item.custo}, '${item.garantia || ''}')">✏️</button>
+                    <button class="btn-small btn-danger" onclick="excluirEstoque('${item.id}')">X</button>
+                </div>
+            </div>`;
+            
+        selectItemOS.innerHTML += `<option value="${item.id}">${item.nome} - R$ ${item.preco.toFixed(2)}</option>`;
     });
-    lista.innerHTML = html;
 }
 
-// ==========================================
-// 3. ABA: ESTOQUE E SERVIÇOS
-// ==========================================
+function filtrarEstoque() {
+    let termo = document.getElementById('busca-estoque').value.toLowerCase();
+    document.querySelectorAll('.item-estoque').forEach(el => {
+        let texto = el.innerText.toLowerCase();
+        el.style.display = texto.includes(termo) ? 'flex' : 'none';
+    });
+}
+
+function prepararEdicaoEstoque(id, nome, preco, custo, garantia) {
+    estoqueEditId = id;
+    document.getElementById('est-nome').value = nome;
+    document.getElementById('est-preco').value = preco;
+    document.getElementById('est-custo').value = custo;
+    document.getElementById('est-garantia').value = garantia;
+    
+    document.getElementById('titulo-form-estoque').innerText = "Editar Item";
+    document.getElementById('btn-salvar-est').innerText = "Atualizar Item";
+    document.getElementById('btn-cancelar-est').style.display = "inline-block";
+    window.scrollTo(0,0);
+}
+
+function cancelarEdicaoEstoque() {
+    estoqueEditId = null;
+    document.getElementById('est-nome').value = "";
+    document.getElementById('est-preco').value = "";
+    document.getElementById('est-custo').value = "";
+    document.getElementById('est-garantia').value = "";
+    
+    document.getElementById('titulo-form-estoque').innerText = "Novo Item / Serviço";
+    document.getElementById('btn-salvar-est').innerText = "Cadastrar Item";
+    document.getElementById('btn-cancelar-est').style.display = "none";
+}
+
 async function salvarEstoque() {
-    const nome = document.getElementById('estoque-nome').value.trim();
-    const tipo = document.getElementById('estoque-tipo').value;
-    const garantia = parseInt(document.getElementById('estoque-garantia').value) || 0;
-    const custo = parseFloat(document.getElementById('estoque-custo').value) || 0;
-    const valor_venda = parseFloat(document.getElementById('estoque-venda').value);
+    const nome = document.getElementById('est-nome').value;
+    const preco = parseFloat(document.getElementById('est-preco').value) || 0;
+    const custo = parseFloat(document.getElementById('est-custo').value) || 0;
+    const garantia = document.getElementById('est-garantia').value;
     
-    if(!nome || isNaN(valor_venda)) return alert("Preencha o nome e o valor de venda!");
+    if (!nome || preco <= 0) return alert('Preencha nome e preço válido!');
+
+    const btn = document.getElementById('btn-salvar-est');
+    btn.disabled = true; btn.innerText = "Salvando...";
+
+    if (estoqueEditId) {
+        await db.from('estoque').update({ nome, preco, custo, garantia }).eq('id', estoqueEditId);
+    } else {
+        await db.from('estoque').insert([{ user_id: currentUser.id, nome, preco, custo, garantia }]);
+    }
     
-    const { error } = await db.from('estoque').insert([{ 
-        nome, tipo, garantia_padrao_dias: garantia, custo, valor_venda, user_id: currentUser.id 
-    }]);
-    
-    if(error) return alert("Erro ao salvar: " + error.message);
-    
-    document.getElementById('estoque-nome').value = '';
-    document.getElementById('estoque-custo').value = '';
-    document.getElementById('estoque-venda').value = '';
+    cancelarEdicaoEstoque();
+    await carregarEstoque();
+    btn.disabled = false;
+}
+
+async function excluirEstoque(id) {
+    if(!confirm("Apagar este item do estoque?")) return;
+    await db.from('estoque').delete().eq('id', id);
     carregarEstoque();
 }
 
-async function carregarEstoque() {
-    const { data, error } = await db.from('estoque').select('*').eq('user_id', currentUser.id).order('nome', { ascending: true });
-    const lista = document.getElementById('lista-estoque');
+
+// ==========================================
+// MÓDULO 3: ORDENS DE SERVIÇO (OS)
+// ==========================================
+async function carregarListaOS() {
+    const { data, error } = await db.from('ordens_servico').select('*, clientes(nome)').order('created_at', { ascending: false });
+    if (error) return;
     
-    if(error || !data || data.length === 0) {
-        lista.innerHTML = "<p style='color: var(--text-muted); font-size: 14px;'>Estoque vazio.</p>";
-        return;
-    }
+    const lista = document.getElementById('lista-os');
+    lista.innerHTML = '';
     
-    let html = '';
-    data.forEach(item => {
-        html += `
-        <div class="lista-item">
-            <div class="item-info">
-                <span class="item-title">${item.nome} <span class="badge-status" style="background:#e2e8f0; color:#333;">${item.tipo}</span></span>
-                <span class="item-sub">Venda: R$ ${item.valor_venda.toFixed(2)} | Garantia: ${item.garantia_padrao_dias} dias</span>
+    data.forEach(os => {
+        let corStatus = os.status === 'Entregue' ? 'var(--success)' : (os.status === 'Pronto' ? 'var(--primary)' : 'var(--text)');
+        lista.innerHTML += `
+            <div class="list-item" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                <div style="width: 100%; display: flex; justify-content: space-between;">
+                    <strong>OS #${os.id.substring(0,6).toUpperCase()}</strong>
+                    <span style="color: ${corStatus}; font-weight: bold; font-size: 12px;">${os.status}</span>
+                </div>
+                <div style="font-size: 14px;">
+                    Cliente: ${os.clientes.nome}<br>
+                    Aparelho: ${os.aparelho}
+                </div>
+                <button class="btn-outline" onclick="abrirOS('${os.id}')" style="width: 100%; padding: 8px;">🔧 Gerenciar OS</button>
             </div>
-        </div>`;
+        `;
     });
-    lista.innerHTML = html;
 }
 
-// ==========================================
-// 4. ABA: ORDENS DE SERVIÇO (OS)
-// ==========================================
-async function carregarClientesSelect() {
-    const { data } = await db.from('clientes').select('id, nome').eq('user_id', currentUser.id).order('nome', { ascending: true });
-    const select = document.getElementById('os-cliente');
-    if(!data) return;
-    
-    let html = '<option value="">-- Selecione o Cliente --</option>';
-    data.forEach(c => html += `<option value="${c.id}">${c.nome}</option>`);
-    select.innerHTML = html;
-}
-
-async function abrirOS() {
+async function gerarOS() {
     const cliente_id = document.getElementById('os-cliente').value;
-    const aparelho = document.getElementById('os-aparelho').value.trim();
-    const defeito_relatado = document.getElementById('os-defeito').value.trim();
+    const aparelho = document.getElementById('os-aparelho').value;
+    const defeito = document.getElementById('os-defeito').value;
     
-    if(!cliente_id || !aparelho || !defeito_relatado) return alert("Preencha todos os campos da OS!");
+    if (!cliente_id || !aparelho) return alert('Selecione cliente e aparelho!');
     
-    const { error } = await db.from('ordens_servico').insert([{ 
-        cliente_id, aparelho, defeito_relatado, user_id: currentUser.id 
+    await db.from('ordens_servico').insert([{ 
+        user_id: currentUser.id, cliente_id, aparelho, defeito, status: 'Aguardando Avaliação', valor_total: 0 
     }]);
-    
-    if(error) return alert("Erro ao gerar OS: " + error.message);
     
     document.getElementById('os-aparelho').value = '';
     document.getElementById('os-defeito').value = '';
-    carregarOS();
+    carregarListaOS();
 }
 
-async function carregarOS() {
-    const lista = document.getElementById('lista-os');
-    lista.innerHTML = "Carregando...";
+function voltarListaOS() {
+    osAtual = null;
+    document.getElementById('os-detalhes-view').style.display = 'none';
+    document.getElementById('os-base-view').style.display = 'block';
+    carregarListaOS(); // Atualiza a lista caso algo tenha mudado
+}
+
+async function abrirOS(id) {
+    const { data, error } = await db.from('ordens_servico').select('*, clientes(nome, whatsapp)').eq('id', id).single();
+    if (error) return;
     
-    const { data, error } = await db.from('ordens_servico').select('*, clientes(nome, whatsapp)').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+    osAtual = data;
     
-    if(error || !data || data.length === 0) {
-        lista.innerHTML = "<p style='color: var(--text-muted); font-size: 14px;'>Nenhuma OS encontrada.</p>";
-        return;
-    }
+    // Troca as telas suavemente sem destruir o HTML base
+    document.getElementById('os-base-view').style.display = 'none';
+    document.getElementById('os-detalhes-view').style.display = 'block';
     
-    let html = '';
-    data.forEach(os => {
-        let statusColor = os.status === 'Concluído' || os.status === 'Entregue' ? 'status-concluido' : (os.status === 'Em Andamento' ? 'status-andamento' : 'status-pendente');
-        
-        html += `
-        <div class="card" style="border-left: 4px solid var(--primary); margin-bottom: 15px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <h3 style="margin:0; font-size: 16px;">${os.aparelho}</h3>
-                <span class="badge-status ${statusColor}">${os.status}</span>
+    document.getElementById('det-os-id').innerText = osAtual.id.substring(0,6).toUpperCase();
+    document.getElementById('det-os-cliente').innerText = osAtual.clientes.nome;
+    document.getElementById('det-os-aparelho').innerText = osAtual.aparelho;
+    document.getElementById('det-os-status').value = osAtual.status;
+    
+    carregarItensOS();
+}
+
+async function atualizarStatusOS() {
+    if(!osAtual) return;
+    const status = document.getElementById('det-os-status').value;
+    await db.from('ordens_servico').update({ status }).eq('id', osAtual.id);
+}
+
+async function carregarItensOS() {
+    const { data } = await db.from('os_itens').select('*, estoque(nome)').eq('os_id', osAtual.id);
+    
+    const lista = document.getElementById('lista-itens-os');
+    lista.innerHTML = '';
+    
+    let total = 0;
+    osAtual.itens = data; // Guardamos na variável global para o PDF e Zap
+    
+    data.forEach(item => {
+        total += item.subtotal;
+        lista.innerHTML += `
+            <div class="list-item" style="padding: 8px 0;">
+                <div>
+                    <strong style="font-size: 14px;">${item.estoque.nome}</strong><br>
+                    <small>${item.quantidade}x R$ ${item.preco_unitario.toFixed(2)}</small>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <strong>R$ ${item.subtotal.toFixed(2)}</strong>
+                    <button class="btn-small btn-danger" onclick="removerItemOS('${item.id}')">X</button>
+                </div>
             </div>
-            <p style="margin: 0 0 10px 0; font-size: 13px; color: var(--text-muted);">👤 Cliente: <strong>${os.clientes.nome}</strong></p>
-            <p style="margin: 0 0 15px 0; font-size: 13px; color: var(--text-muted);">⚠️ Defeito: ${os.defeito_relatado}</p>
-            
-            <div style="display: flex; gap: 10px;">
-                <button onclick="gerenciarOS('${os.id}')" style="background-color: var(--dark); padding: 10px;">🔧 Gerenciar OS</button>
-            </div>
-        </div>`;
+        `;
     });
     
-    // Área base da aba OS (Esconde a tela de detalhes se estiver aberta)
-    lista.innerHTML = html;
+    osAtual.valor_total = total;
+    document.getElementById('det-os-total').innerText = total.toFixed(2);
+    await db.from('ordens_servico').update({ valor_total: total }).eq('id', osAtual.id);
 }
 
-// ==========================================
-// 5. O CORAÇÃO: GERENCIAR UMA OS ESPECÍFICA
-// ==========================================
-async function gerenciarOS(osId) {
-    const viewOs = document.getElementById('view-os');
-    viewOs.innerHTML = `<h2 style="text-align:center;">Carregando detalhes...</h2>`;
+async function adicionarItemNaOS() {
+    const estoque_id = document.getElementById('add-os-item').value;
+    const quantidade = parseInt(document.getElementById('add-os-qtd').value);
     
-    // Busca a OS, os dados do cliente e os itens já adicionados
-    const { data: osData } = await db.from('ordens_servico').select('*, clientes(nome, whatsapp)').eq('id', osId).single();
-    const { data: itensData } = await db.from('os_itens').select('*, estoque(nome, tipo, garantia_padrao_dias)').eq('os_id', osId);
-    const { data: estoqueData } = await db.from('estoque').select('id, nome, valor_venda').eq('user_id', currentUser.id).order('nome', { ascending: true });
+    if (!estoque_id || quantidade < 1) return;
     
-    osAtual = { ...osData, itens: itensData || [] };
+    const { data: itemEstoque } = await db.from('estoque').select('preco, garantia').eq('id', estoque_id).single();
+    const subtotal = itemEstoque.preco * quantidade;
     
-    // Monta o Select de Peças
-    let optionsEstoque = '<option value="">-- Selecione uma Peça/Serviço --</option>';
-    if(estoqueData) {
-        estoqueData.forEach(item => optionsEstoque += `<option value="${item.id}">+ ${item.nome} (R$ ${item.valor_venda.toFixed(2)})</option>`);
-    }
-
-    // Monta a Tabela de Itens
-    let htmlItens = '';
-    let maiorGarantia = 0;
-    
-    if(osAtual.itens.length === 0) {
-        htmlItens = `<p style="font-size:13px; color:var(--text-muted);">Nenhuma peça ou serviço adicionado.</p>`;
-    } else {
-        osAtual.itens.forEach(item => {
-            htmlItens += `
-            <div class="lista-item" style="background: var(--light); border-radius: 8px; margin-bottom: 5px; padding: 10px;">
-                <div class="item-info" style="width: 100%;">
-                    <div style="display:flex; justify-content: space-between;">
-                        <span class="item-title">${item.estoque.nome} (x${item.quantidade})</span>
-                        <span style="font-weight: bold; color: var(--danger);" onclick="removerItemOS('${item.id}', '${osId}')">X Excluir</span>
-                    </div>
-                    <span class="item-sub">Subtotal: R$ ${item.subtotal.toFixed(2)}</span>
-                </div>
-            </div>`;
-            if(item.estoque.garantia_padrao_dias > maiorGarantia) maiorGarantia = item.estoque.garantia_padrao_dias;
-        });
-    }
-
-    // A Tela Dinâmica de Detalhes da OS
-    viewOs.innerHTML = `
-        <button onclick="mudarAba('view-os')" style="background: var(--text-muted); margin-bottom: 15px; padding: 10px; width: auto;">⬅ Voltar para Lista</button>
-        
-        <div class="card">
-            <h2>OS: ${osAtual.aparelho}</h2>
-            <p style="font-size: 14px; margin-bottom: 10px;"><strong>Cliente:</strong> ${osAtual.clientes.nome}</p>
-            
-            <label style="font-size: 12px; font-weight: bold;">Status da OS:</label>
-            <select id="os-status-select" onchange="atualizarStatusOS('${osId}', this.value)" style="margin-bottom: 20px;">
-                <option value="Orçamento Pendente" ${osAtual.status === 'Orçamento Pendente' ? 'selected' : ''}>Orçamento Pendente</option>
-                <option value="Aguardando Aprovação" ${osAtual.status === 'Aguardando Aprovação' ? 'selected' : ''}>Aguardando Aprovação</option>
-                <option value="Em Andamento" ${osAtual.status === 'Em Andamento' ? 'selected' : ''}>Em Andamento</option>
-                <option value="Concluído" ${osAtual.status === 'Concluído' ? 'selected' : ''}>Concluído</option>
-                <option value="Entregue" ${osAtual.status === 'Entregue' ? 'selected' : ''}>Entregue</option>
-            </select>
-
-            <h3 style="font-size: 15px; border-top: 1px solid var(--border); padding-top: 15px;">Adicionar Peça/Serviço</h3>
-            <select id="add-item-id">${optionsEstoque}</select>
-            <div class="linha-inputs">
-                <input type="number" id="add-item-qtd" value="1" placeholder="Qtd" min="1">
-                <button onclick="adicionarItemOS('${osId}')">Adicionar</button>
-            </div>
-            
-            <h3 style="font-size: 15px; margin-top: 20px;">Itens no Orçamento</h3>
-            ${htmlItens}
-            
-            <div style="background: #e8f6f3; padding: 15px; border-radius: 8px; margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 16px; font-weight: bold; color: var(--dark);">Total:</span>
-                <span style="font-size: 20px; font-weight: 900; color: var(--success);">R$ ${osAtual.valor_total.toFixed(2)}</span>
-            </div>
-            
-            <input type="text" id="os-garantia-final" value="${osAtual.garantia_final || (maiorGarantia > 0 ? maiorGarantia + ' dias' : 'Sem garantia')}" placeholder="Texto da Garantia (Ex: 90 dias)" onchange="salvarGarantia('${osId}', this.value)" style="margin-top: 15px;">
-
-            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
-                <button onclick="enviarWhatsApp()" style="background: var(--whatsapp);"><div class="nav-icon" style="display:inline; margin-right:5px;">💬</div> Enviar por WhatsApp</button>
-                <button onclick="gerarPDF()" style="background: var(--dark);"><div class="nav-icon" style="display:inline; margin-right:5px;">📄</div> Exportar PDF</button>
-            </div>
-        </div>
-    `;
-}
-
-async function atualizarStatusOS(osId, novoStatus) {
-    await db.from('ordens_servico').update({ status: novoStatus }).eq('id', osId);
-}
-
-async function salvarGarantia(osId, textoGarantia) {
-    await db.from('ordens_servico').update({ garantia_final: textoGarantia }).eq('id', osId);
-    osAtual.garantia_final = textoGarantia;
-}
-
-async function adicionarItemOS(osId) {
-    const estoque_id = document.getElementById('add-item-id').value;
-    const quantidade = parseInt(document.getElementById('add-item-qtd').value);
-    
-    if(!estoque_id || quantidade < 1) return alert("Selecione um item e a quantidade!");
-    
-    // Puxa o valor atual da peça do banco
-    const { data: peca } = await db.from('estoque').select('valor_venda').eq('id', estoque_id).single();
-    const subtotal = peca.valor_venda * quantidade;
-    
-    // Insere o item na OS
-    await db.from('os_itens').insert([{
-        os_id: osId, estoque_id, quantidade, valor_unitario: peca.valor_venda, subtotal, user_id: currentUser.id
+    await db.from('os_itens').insert([{ 
+        os_id: osAtual.id, estoque_id, quantidade, preco_unitario: itemEstoque.preco, subtotal 
     }]);
     
-    // Atualiza o valor total da OS
-    const novoTotal = osAtual.valor_total + subtotal;
-    await db.from('ordens_servico').update({ valor_total: novoTotal }).eq('id', osId);
+    // Atualiza a garantia da OS baseada na última peça
+    if(itemEstoque.garantia) {
+        osAtual.garantia_final = itemEstoque.garantia;
+        await db.from('ordens_servico').update({ garantia_final: itemEstoque.garantia }).eq('id', osAtual.id);
+    }
     
-    // Recarrega a tela de gerenciamento
-    gerenciarOS(osId);
+    carregarItensOS();
 }
 
-async function removerItemOS(itemId, osId) {
-    if(!confirm("Remover este item do orçamento?")) return;
-    
-    const { data: itemData } = await db.from('os_itens').select('subtotal').eq('id', itemId).single();
-    await db.from('os_itens').delete().eq('id', itemId);
-    
-    const novoTotal = osAtual.valor_total - itemData.subtotal;
-    await db.from('ordens_servico').update({ valor_total: novoTotal }).eq('id', osId);
-    
-    gerenciarOS(osId);
+async function removerItemOS(idItem) {
+    await db.from('os_itens').delete().eq('id', idItem);
+    carregarItensOS();
 }
 
-// ==========================================
-// 6. GERAÇÃO DE PDF E WHATSAPP
-// ==========================================
 function enviarWhatsApp() {
     if(!osAtual) return;
+    const celular = osAtual.clientes.whatsapp;
+    if(!celular) return alert("Cliente sem WhatsApp cadastrado!");
     
-    let texto = `💻 *Orçamento Técnico - TechOS*\n\n`;
-    texto += `*Cliente:* ${osAtual.clientes.nome}\n`;
-    texto += `*Aparelho:* ${osAtual.aparelho}\n`;
-    texto += `*Defeito:* ${osAtual.defeito_relatado}\n\n`;
-    
-    texto += `*🛠️ Serviços e Peças:*\n`;
-    osAtual.itens.forEach(item => {
-        texto += `- ${item.quantidade}x ${item.estoque.nome} (R$ ${item.subtotal.toFixed(2)})\n`;
-    });
-    
-    texto += `\n💰 *Valor Total: R$ ${osAtual.valor_total.toFixed(2)}*\n`;
-    texto += `🛡️ *Garantia:* ${osAtual.garantia_final || 'Consultar'}\n\n`;
-    texto += `Podemos prosseguir com o serviço? Fico no aguardo da aprovação!`;
-    
-    let numeroFormatado = osAtual.clientes.whatsapp.replace(/\D/g,'');
-    if(numeroFormatado.length === 11) numeroFormatado = "55" + numeroFormatado; // Adiciona DDI do Brasil se necessário
-    
-    let url = `https://api.whatsapp.com/send?phone=${numeroFormatado}&text=${encodeURIComponent(texto)}`;
-    window.open(url, '_blank');
+    let texto = `*Assistência Técnica*\nOlá ${osAtual.clientes.nome}!\n\nSeu orçamento para o aparelho *${osAtual.aparelho}* ficou pronto.\n\n*Valor Total: R$ ${osAtual.valor_total.toFixed(2)}*\n\nStatus: ${osAtual.status}`;
+    window.open(`https://api.whatsapp.com/send?phone=55${celular.replace(/\D/g,'')}&text=${encodeURIComponent(texto)}`);
 }
+
+// ==========================================
+// MÓDULO 4: PERFIL DA EMPRESA E PDF
+// ==========================================
+function carregarLogo(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('preview-logo').src = e.target.result;
+            document.getElementById('preview-logo').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function salvarPerfilLoja() {
+    const perfil = {
+        nome: document.getElementById('loja-nome').value,
+        cnpj: document.getElementById('loja-cnpj').value,
+        endereco: document.getElementById('loja-endereco').value,
+        logo: document.getElementById('preview-logo').src
+    };
+    
+    localStorage.setItem('techos_perfil', JSON.stringify(perfil));
+    alert("✅ Perfil da Assistência salvo com sucesso! O cabeçalho dos seus orçamentos foi atualizado.");
+}
+
+function carregarPerfilLoja() {
+    const perfilSalvo = localStorage.getItem('techos_perfil');
+    if (perfilSalvo) {
+        const perfil = JSON.parse(perfilSalvo);
+        document.getElementById('loja-nome').value = perfil.nome || '';
+        document.getElementById('loja-cnpj').value = perfil.cnpj || '';
+        document.getElementById('loja-endereco').value = perfil.endereco || '';
+        
+        if (perfil.logo && perfil.logo.startsWith('data:image')) {
+            document.getElementById('preview-logo').src = perfil.logo;
+            document.getElementById('preview-logo').style.display = 'block';
+        }
+    }
+}
+
+function prepararCabecalhoPDF() {
+    const perfilSalvo = localStorage.getItem('techos_perfil');
+    if (perfilSalvo) {
+        const perfil = JSON.parse(perfilSalvo);
+        
+        document.getElementById('pdf-nome-empresa').innerText = perfil.nome || "TECH OS ASSISTÊNCIA";
+        document.getElementById('pdf-cnpj-empresa').innerText = perfil.cnpj ? `CNPJ: ${perfil.cnpj}` : '';
+        document.getElementById('pdf-endereco-empresa').innerText = perfil.endereco || '';
+        
+        const logoImg = document.getElementById('pdf-logo-empresa');
+        if (perfil.logo && perfil.logo.startsWith('data:image')) {
+            logoImg.src = perfil.logo;
+            logoImg.style.display = 'block';
+        } else {
+            logoImg.style.display = 'none';
+        }
+    }
+}
+
 function gerarPDF() {
     if(!osAtual) return;
     
-    // 1. Preenche o molde oculto com os dados
+    // 1. Aplica a marca da empresa
+    prepararCabecalhoPDF();
+
+    // 2. Preenche os dados da OS no molde oculto
     document.getElementById('pdf-os-numero').innerText = `Orçamento / OS #${osAtual.id.substring(0,6).toUpperCase()}`;
     document.getElementById('pdf-cliente').innerText = `${osAtual.clientes.nome} - ${osAtual.clientes.whatsapp || ''}`;
     document.getElementById('pdf-aparelho').innerText = osAtual.aparelho;
-    document.getElementById('pdf-defeito').innerText = osAtual.defeito_relatado;
+    document.getElementById('pdf-defeito').innerText = osAtual.defeito_relatado || 'Não informado';
     
     let htmlTabela = '';
-    osAtual.itens.forEach(item => {
+    (osAtual.itens || []).forEach(item => {
         htmlTabela += `
             <tr>
                 <td style="padding: 10px; border-bottom: 1px solid #dcdde1;">${item.estoque.nome}</td>
@@ -446,9 +463,9 @@ function gerarPDF() {
     document.getElementById('pdf-total').innerText = `R$ ${osAtual.valor_total.toFixed(2)}`;
     document.getElementById('pdf-garantia').innerText = osAtual.garantia_final || 'Consultar';
     
-    // 2. Prepara e gera o PDF
+    // 3. Prepara e gera o PDF (Com a correção de tela branca)
     const molde = document.getElementById('pdf-molde');
-    const wrapper = molde.parentElement;
+    const wrapper = document.getElementById('pdf-wrapper');
     
     wrapper.style.display = 'block'; // Mostra temporariamente
     
@@ -456,14 +473,14 @@ function gerarPDF() {
       margin:       0,
       filename:     `Orcamento_${osAtual.clientes.nome.replace(/\s+/g, '_')}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, scrollY: 0 }, // scrollY: 0 corrige o erro de tela branca ao rolar a página no celular
+      html2canvas:  { scale: 2, scrollY: 0 }, // scrollY: 0 corrige o erro de rolagem do celular
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
 
-    // Dá um respiro de 100ms para o navegador "pintar" a tela antes de tirar a foto
+    // Dá um respiro de 100ms para o navegador desenhar a tela e a logo antes de bater a foto
     setTimeout(() => {
         html2pdf().set(opt).from(molde).save().then(() => {
-            wrapper.style.display = 'none'; // Esconde o molde novamente após o download
+            wrapper.style.display = 'none'; // Esconde novamente
         });
     }, 100);
 }
