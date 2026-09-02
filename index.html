@@ -10,7 +10,7 @@
     <style>
         :root {
             --primary: #2563eb; --primary-hover: #1d4ed8; --dark: #1e293b; --light: #f8fafc;
-            --danger: #ef4444; --success: #10b981; --border: #e2e8f0; --text: #334155;
+            --danger: #ef4444; --success: #10b981; --warning: #f59e0b; --border: #e2e8f0; --text: #334155;
         }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--light); color: var(--text); margin: 0; padding-bottom: 70px; }
         * { box-sizing: border-box; }
@@ -28,6 +28,11 @@
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
         .btn-small { width: auto; padding: 6px 12px; font-size: 12px; }
         
+        /* BADGES (Etiquetas) */
+        .badge { padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .badge-peca { background: #dbeafe; color: var(--primary); border: 1px solid #bfdbfe; }
+        .badge-servico { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+
         /* BUSCA E LISTAS */
         .search-bar { position: relative; margin-bottom: 15px; }
         .search-bar input { margin-bottom: 0; background: var(--light); }
@@ -35,7 +40,7 @@
         .list-item:last-child { border-bottom: none; }
         .item-actions { display: flex; gap: 8px; }
 
-        /* NAVEGAÇÃO SUPERIOR E INFERIOR */
+        /* NAVEGAÇÃO */
         .top-bar { background: white; padding: 15px; border-bottom: 1px solid var(--border); text-align: center; position: sticky; top: 0; z-index: 10; font-weight: bold; color: var(--primary); font-size: 18px; }
         .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 8px 0; z-index: 10; }
         .nav-item { color: var(--text); text-align: center; font-size: 11px; cursor: pointer; flex: 1; padding: 5px 2px; }
@@ -92,11 +97,15 @@
             </div>
         </div>
 
-        <!-- ABA 2: ESTOQUE -->
+        <!-- ABA 2: ESTOQUE (COM SEPARAÇÃO DE TIPO) -->
         <div id="view-estoque" class="page-view">
             <div class="card">
                 <h3 id="titulo-form-estoque">Novo Item / Serviço</h3>
-                <input type="text" id="est-nome" placeholder="Nome da Peça ou Serviço">
+                <select id="est-tipo" style="font-weight: bold;">
+                    <option value="Peça">📦 Produto / Peça Física</option>
+                    <option value="Serviço">🛠️ Mão de Obra / Serviço</option>
+                </select>
+                <input type="text" id="est-nome" placeholder="Nome (Ex: Tela iPhone 11 / Formatação)">
                 <div style="display: flex; gap: 10px;">
                     <input type="number" id="est-custo" placeholder="Custo (R$)">
                     <input type="number" id="est-preco" placeholder="Venda (R$)">
@@ -147,7 +156,7 @@
                     </select>
                 </div>
                 <div class="card">
-                    <h3>Adicionar Serviço/Peça</h3>
+                    <h3>Adicionar à OS</h3>
                     <div style="display: flex; gap: 10px;">
                         <select id="add-os-item" style="flex: 2;"><option value="">Selecione do Estoque...</option></select>
                         <input type="number" id="add-os-qtd" value="1" style="flex: 1;">
@@ -166,36 +175,66 @@
             </div>
         </div>
 
-        <!-- ABA 4: ORÇAMENTO RÁPIDO (NOVA) -->
+        <!-- ABA 4: ORÇAMENTO RÁPIDO (SEPARADO E INTELIGENTE) -->
         <div id="view-orcamento" class="page-view">
             <div class="card">
-                <h3>Orçamento Avulso (Rápido)</h3>
-                <input type="text" id="orc-cliente" placeholder="Nome do Cliente (Opcional)">
+                <h3>1. Dados do Cliente</h3>
+                <input type="text" id="orc-cliente" list="lista-clientes-datalist" placeholder="Nome (Busca Automática)" oninput="checarClienteOrc()">
+                <datalist id="lista-clientes-datalist"></datalist>
+                
                 <input type="tel" id="orc-zap" placeholder="WhatsApp (DDD + Número)">
+                <button id="btn-salvar-cli-rapido" style="display:none; background: var(--success); margin-bottom: 12px; font-size: 13px;" onclick="salvarClienteRapido()">💾 Salvar como Novo Cliente</button>
                 <input type="text" id="orc-aparelho" placeholder="Aparelho / Modelo">
             </div>
             
             <div class="card">
-                <h3>Adicionar Itens</h3>
+                <h3>2. Mão de Obra (Serviços)</h3>
                 <div style="display: flex; gap: 10px;">
-                    <select id="add-orc-item" style="flex: 2;"><option value="">Selecione do Estoque...</option></select>
-                    <input type="number" id="add-orc-qtd" value="1" style="flex: 1;">
+                    <select id="add-orc-servico" style="flex: 2;"><option value="">Selecione o Serviço...</option></select>
+                    <button onclick="adicionarItemOrcamentoLocal('Serviço')" class="btn-outline" style="flex: 1; padding: 10px;">➕ Add Serviço</button>
                 </div>
-                <button onclick="adicionarItemOrcamentoLocal()">Adicionar ao Orçamento</button>
             </div>
 
             <div class="card">
-                <h3>Itens Adicionados</h3>
+                <h3>3. Peças e Componentes</h3>
+                <div style="display: flex; gap: 10px;">
+                    <select id="add-orc-peca" style="flex: 2;"><option value="">Selecione a Peça...</option></select>
+                    <input type="number" id="add-orc-peca-qtd" value="1" style="width: 60px;">
+                    <button onclick="adicionarItemOrcamentoLocal('Peça')" style="flex: 1; padding: 10px;">➕ Add Peça</button>
+                </div>
+                <button class="btn-small btn-outline" style="width:100%; margin-top:10px;" onclick="mostrarCadastroPecaRapido()">📦 Não achou? Cadastrar Nova Peça</button>
+                
+                <!-- Box de Cadastro Rápido de Peça -->
+                <div id="box-nova-peca" style="display:none; margin-top:12px; padding:12px; background:var(--light); border-radius:8px; border:1px dashed var(--primary);">
+                    <strong style="display:block; font-size:12px; margin-bottom:8px; color:var(--primary);">Cadastro Rápido de Peça:</strong>
+                    <input type="text" id="rapido-peca-nome" placeholder="Nome da Peça">
+                    <input type="number" id="rapido-peca-preco" placeholder="Preço de Venda (R$)">
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="salvarPecaRapida()" style="background:var(--success); padding:8px; font-size:13px;">Salvar no Estoque</button>
+                        <button onclick="document.getElementById('box-nova-peca').style.display='none'" class="btn-outline" style="padding:8px; font-size:13px;">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 8px;">Resumo do Orçamento</h3>
                 <div id="lista-itens-orcamento"></div>
-                <h2 style="text-align: right; margin-top: 15px; color: var(--primary);">Total: R$ <span id="orc-total">0.00</span></h2>
+                <h2 style="text-align: right; margin-top: 15px; color: var(--primary);">TOTAL: R$ <span id="orc-total">0.00</span></h2>
+            </div>
+
+            <div class="card">
+                <h3>Observações Comerciais</h3>
+                <input type="text" id="orc-validade" placeholder="Validade do Orçamento (Ex: 7 dias)">
+                <input type="text" id="orc-garantia-obs" placeholder="Garantia Geral (Ex: 90 dias após entrega)">
+                <input type="text" id="orc-pagamento" placeholder="Formas de Pagamento (Ex: Pix, 3x Cartão)">
             </div>
             
             <div class="card">
                 <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <button onclick="gerarPDF(true)" style="background: var(--dark);">📄 PDF</button>
+                    <button onclick="gerarPDF(true)" style="background: var(--dark);">📄 Gerar PDF</button>
                     <button onclick="enviarWhatsAppOrcamento()" style="background: var(--success);">💬 WhatsApp</button>
                 </div>
-                <button onclick="limparOrcamentoLocal()" class="btn-outline btn-danger" style="background: transparent; color: var(--danger);">🗑️ Limpar Tela</button>
+                <button onclick="limparOrcamentoLocal()" class="btn-outline btn-danger" style="background: transparent; color: var(--danger);">🗑️ Limpar Formulário</button>
             </div>
         </div>
 
@@ -236,7 +275,7 @@
 
     <!-- MOLDE DO PDF (ESCONDIDO) -->
     <div id="pdf-wrapper">
-        <div id="pdf-molde" style="padding: 30px; font-family: Arial, sans-serif;">
+        <div id="pdf-molde" style="padding: 30px; font-family: Arial, sans-serif; font-size: 14px;">
             <div class="pdf-header">
                 <img id="pdf-logo-empresa" src="" class="pdf-logo" style="display: none;">
                 <div>
@@ -256,17 +295,23 @@
             <table class="pdf-tabela">
                 <thead>
                     <tr style="background: #e2e8f0;">
-                        <th>Item / Serviço</th>
-                        <th>Qtd</th>
-                        <th>Subtotal</th>
+                        <th>Item / Descrição</th>
+                        <th style="width: 50px; text-align: center;">Qtd</th>
+                        <th style="width: 100px; text-align: right;">Subtotal</th>
                     </tr>
                 </thead>
                 <tbody id="pdf-itens-tabela"></tbody>
             </table>
 
-            <div style="margin-top: 30px; text-align: right;">
-                <p><strong>Garantia Média:</strong> <span id="pdf-garantia"></span></p>
-                <h2 style="color: #2563eb;">Total: <span id="pdf-total"></span></h2>
+            <div style="margin-top: 15px; text-align: right;">
+                <h2 style="color: #2563eb; font-size: 24px; margin: 0;">Total: <span id="pdf-total"></span></h2>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; font-size: 12px; color: #475569;">
+                <strong>Condições e Observações:</strong><br>
+                <p style="margin: 5px 0;"><strong>Garantia:</strong> <span id="pdf-garantia"></span></p>
+                <p style="margin: 5px 0;"><strong>Pagamento:</strong> <span id="pdf-pagamento"></span></p>
+                <p style="margin: 5px 0;"><strong>Validade do Orçamento:</strong> <span id="pdf-validade"></span></p>
             </div>
         </div>
     </div>
