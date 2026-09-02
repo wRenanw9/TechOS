@@ -23,6 +23,7 @@
         
         button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; transition: 0.2s; }
         button:hover { background: var(--primary-hover); }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
         .btn-danger { background: var(--danger); }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
         .btn-small { width: auto; padding: 6px 12px; font-size: 12px; }
@@ -36,8 +37,8 @@
 
         /* NAVEGAÇÃO SUPERIOR E INFERIOR */
         .top-bar { background: white; padding: 15px; border-bottom: 1px solid var(--border); text-align: center; position: sticky; top: 0; z-index: 10; font-weight: bold; color: var(--primary); font-size: 18px; }
-        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 10px 0; z-index: 10; }
-        .nav-item { color: var(--text); text-align: center; font-size: 12px; cursor: pointer; flex: 1; }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 8px 0; z-index: 10; }
+        .nav-item { color: var(--text); text-align: center; font-size: 11px; cursor: pointer; flex: 1; padding: 5px 2px; }
         .nav-item.active { color: var(--primary); font-weight: bold; }
 
         .page-view { display: none; animation: fadeIn 0.3s; }
@@ -71,7 +72,7 @@
     <div id="app-view" style="display: none;">
         <div class="top-bar">TechOS Painel</div>
 
-        <!-- ABA: CLIENTES -->
+        <!-- ABA 1: CLIENTES -->
         <div id="view-clientes" class="page-view active">
             <div class="card">
                 <h3 id="titulo-form-cliente">Novo Cliente</h3>
@@ -91,7 +92,7 @@
             </div>
         </div>
 
-        <!-- ABA: ESTOQUE -->
+        <!-- ABA 2: ESTOQUE -->
         <div id="view-estoque" class="page-view">
             <div class="card">
                 <h3 id="titulo-form-estoque">Novo Item / Serviço</h3>
@@ -115,10 +116,8 @@
             </div>
         </div>
 
-        <!-- ABA: ORDEM DE SERVIÇO (DIVIDIDA EM 2 PARA CORRIGIR O BOTÃO VOLTAR) -->
+        <!-- ABA 3: ORDEM DE SERVIÇO -->
         <div id="view-os" class="page-view">
-            
-            <!-- SUBCONTÊINER: LISTA E CADASTRO -->
             <div id="os-base-view">
                 <div class="card">
                     <h3>Abrir Nova OS</h3>
@@ -133,7 +132,6 @@
                 </div>
             </div>
 
-            <!-- SUBCONTÊINER: DETALHES DA OS -->
             <div id="os-detalhes-view" style="display: none;">
                 <div class="card" style="background: var(--dark); color: white;">
                     <button onclick="voltarListaOS()" style="background: white; color: var(--dark); margin-bottom: 15px;">⬅️ Voltar para Lista</button>
@@ -148,7 +146,6 @@
                         <option value="Entregue">Entregue</option>
                     </select>
                 </div>
-
                 <div class="card">
                     <h3>Adicionar Serviço/Peça</h3>
                     <div style="display: flex; gap: 10px;">
@@ -157,24 +154,56 @@
                     </div>
                     <button onclick="adicionarItemNaOS()">Adicionar à OS</button>
                 </div>
-
                 <div class="card">
                     <h3>Itens do Orçamento</h3>
                     <div id="lista-itens-os"></div>
                     <h2 style="text-align: right; margin-top: 15px; color: var(--primary);">Total: R$ <span id="det-os-total">0.00</span></h2>
                 </div>
-
                 <div class="card" style="display: flex; gap: 10px;">
-                    <button onclick="gerarPDF()" style="background: var(--dark);">📄 Exportar PDF</button>
-                    <button onclick="enviarWhatsApp()" style="background: var(--success);">💬 WhatsApp</button>
+                    <button onclick="gerarPDF(false)" style="background: var(--dark);">📄 Gerar PDF</button>
+                    <button onclick="enviarWhatsAppOS()" style="background: var(--success);">💬 WhatsApp</button>
                 </div>
             </div>
         </div>
 
-        <!-- ABA: MINHA LOJA (PERFIL PARA O PDF) -->
+        <!-- ABA 4: ORÇAMENTO RÁPIDO (NOVA) -->
+        <div id="view-orcamento" class="page-view">
+            <div class="card">
+                <h3>Orçamento Avulso (Rápido)</h3>
+                <input type="text" id="orc-cliente" placeholder="Nome do Cliente (Opcional)">
+                <input type="tel" id="orc-zap" placeholder="WhatsApp (DDD + Número)">
+                <input type="text" id="orc-aparelho" placeholder="Aparelho / Modelo">
+            </div>
+            
+            <div class="card">
+                <h3>Adicionar Itens</h3>
+                <div style="display: flex; gap: 10px;">
+                    <select id="add-orc-item" style="flex: 2;"><option value="">Selecione do Estoque...</option></select>
+                    <input type="number" id="add-orc-qtd" value="1" style="flex: 1;">
+                </div>
+                <button onclick="adicionarItemOrcamentoLocal()">Adicionar ao Orçamento</button>
+            </div>
+
+            <div class="card">
+                <h3>Itens Adicionados</h3>
+                <div id="lista-itens-orcamento"></div>
+                <h2 style="text-align: right; margin-top: 15px; color: var(--primary);">Total: R$ <span id="orc-total">0.00</span></h2>
+            </div>
+            
+            <div class="card">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button onclick="gerarPDF(true)" style="background: var(--dark);">📄 PDF</button>
+                    <button onclick="enviarWhatsAppOrcamento()" style="background: var(--success);">💬 WhatsApp</button>
+                </div>
+                <button onclick="limparOrcamentoLocal()" class="btn-outline btn-danger" style="background: transparent; color: var(--danger);">🗑️ Limpar Tela</button>
+            </div>
+        </div>
+
+        <!-- ABA 5: MINHA LOJA -->
         <div id="view-loja" class="page-view">
             <div class="card">
-                <h3>Perfil da Assistência (Cabeçalho do PDF)</h3>
+                <h3>Perfil da Assistência</h3>
+                <p style="font-size: 13px; color: var(--text);">Estes dados aparecerão no cabeçalho dos seus orçamentos em PDF.</p>
                 
                 <div style="text-align: center; margin-bottom: 15px;">
                     <img id="preview-logo" src="" style="display: none; max-width: 150px; max-height: 100px; margin: 0 auto; border: 1px solid var(--border); border-radius: 8px;">
@@ -195,19 +224,19 @@
             </div>
         </div>
 
+        <!-- MENU INFERIOR -->
         <div class="bottom-nav">
             <div class="nav-item active" onclick="mudarAba('view-clientes', this)">👥<br>Clientes</div>
             <div class="nav-item" onclick="mudarAba('view-estoque', this)">📦<br>Estoque</div>
-            <div class="nav-item" onclick="mudarAba('view-os', this)">🔧<br>Ordens (OS)</div>
-            <div class="nav-item" onclick="mudarAba('view-loja', this)">🏢<br>Minha Loja</div>
+            <div class="nav-item" onclick="mudarAba('view-os', this)">🔧<br>Fila OS</div>
+            <div class="nav-item" onclick="mudarAba('view-orcamento', this)">📝<br>Orçamento</div>
+            <div class="nav-item" onclick="mudarAba('view-loja', this)">🏢<br>Loja</div>
         </div>
     </div>
 
     <!-- MOLDE DO PDF (ESCONDIDO) -->
     <div id="pdf-wrapper">
         <div id="pdf-molde" style="padding: 30px; font-family: Arial, sans-serif;">
-            
-            <!-- CABEÇALHO INJETÁVEL -->
             <div class="pdf-header">
                 <img id="pdf-logo-empresa" src="" class="pdf-logo" style="display: none;">
                 <div>
@@ -221,7 +250,7 @@
                 <h3 id="pdf-os-numero" style="margin-top: 0;">Orçamento</h3>
                 <p><strong>Cliente:</strong> <span id="pdf-cliente"></span></p>
                 <p><strong>Aparelho:</strong> <span id="pdf-aparelho"></span></p>
-                <p style="margin-bottom: 0;"><strong>Defeito Relatado:</strong> <span id="pdf-defeito"></span></p>
+                <p id="linha-defeito" style="margin-bottom: 0;"><strong>Defeito Relatado:</strong> <span id="pdf-defeito"></span></p>
             </div>
 
             <table class="pdf-tabela">
@@ -236,7 +265,7 @@
             </table>
 
             <div style="margin-top: 30px; text-align: right;">
-                <p><strong>Garantia:</strong> <span id="pdf-garantia"></span></p>
+                <p><strong>Garantia Média:</strong> <span id="pdf-garantia"></span></p>
                 <h2 style="color: #2563eb;">Total: <span id="pdf-total"></span></h2>
             </div>
         </div>
