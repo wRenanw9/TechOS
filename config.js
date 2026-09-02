@@ -1,2 +1,2 @@
-const supabaseUrl = 'https://nyzdlxesptizjibmpmkn.supabase.co/rest/v1/';
+const supabaseUrl = 'https://nyzdlxesptizjibmpmkn.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55emRseGVzcHRpemppYm1wbWtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMTA2NTAsImV4cCI6MjEwMzg4NjY1MH0.acOoTVyEY7JEzAvxThopgjdMbxZcDxDd9uPpnBKG6G0';
