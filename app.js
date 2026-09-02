@@ -1,9 +1,15 @@
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO E VARIÁVEIS GLOBAIS
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 let currentUser = null;
-let osAtual = null; // Armazena a OS que está aberta nos detalhes
-let clienteEditId = null; // Controle de edição
-let estoqueEditId = null; // Controle de edição
+let osAtual = null; 
+let clienteEditId = null; 
+let estoqueEditId = null; 
+
+let clientesGlobais = []; // Guarda clientes para busca rápida
+let estoqueGlobal = [];   // Guarda estoque para orçamentos
+
+// Estrutura do Orçamento Local Avulso
+let orcamentoLocal = { itens: [], valor_total: 0 };
 
 window.onload = async () => {
     const { data: { session } } = await db.auth.getSession();
@@ -38,7 +44,7 @@ async function fazerLogout() {
 function iniciarApp() {
     document.getElementById('auth-view').style.display = 'none';
     document.getElementById('app-view').style.display = 'block';
-    carregarPerfilLoja(); // Carrega os dados da empresa pro PDF
+    carregarPerfilLoja(); 
     carregarDadosBase();
 }
 
@@ -49,7 +55,6 @@ function mudarAba(idAba, elementoNav) {
     document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
     if(elementoNav) elementoNav.classList.add('active');
 
-    // Se mudar de aba e for a aba OS, garante que mostre a lista base e esconda os detalhes
     if(idAba === 'view-os') voltarListaOS();
 }
 
@@ -60,20 +65,24 @@ async function carregarDadosBase() {
 }
 
 // ==========================================
-// MÓDULO 1: CLIENTES (Com Busca e Edição)
+// MÓDULO 1: CLIENTES (Com Busca Rápida)
 // ==========================================
 async function carregarClientes() {
     const { data, error } = await db.from('clientes').select('*').order('nome');
     if (error) return console.error(error);
     
+    clientesGlobais = data; 
+    
     const lista = document.getElementById('lista-clientes');
     const selectOS = document.getElementById('os-cliente');
+    const datalistOrc = document.getElementById('lista-clientes-datalist');
     
     lista.innerHTML = '';
     selectOS.innerHTML = '<option value="">Selecione o Cliente...</option>';
+    datalistOrc.innerHTML = '';
 
     data.forEach(cli => {
-        // Lista
+        // Aba Clientes
         lista.innerHTML += `
             <div class="list-item item-cliente">
                 <div>
@@ -85,9 +94,12 @@ async function carregarClientes() {
                     <button class="btn-small btn-danger" onclick="excluirCliente('${cli.id}')">X</button>
                 </div>
             </div>`;
-        
-        // Select da OS
+            
+        // Dropdown OS
         selectOS.innerHTML += `<option value="${cli.id}">${cli.nome}</option>`;
+        
+        // Datalist Orçamento Avulso (Busca Inteligente)
+        datalistOrc.innerHTML += `<option value="${cli.nome}">`;
     });
 }
 
@@ -143,34 +155,98 @@ async function excluirCliente(id) {
     carregarClientes();
 }
 
+// Função de Busca e Cadastro Rápido de Cliente na Aba Orçamentos
+function checarClienteOrc() {
+    const termo = document.getElementById('orc-cliente').value;
+    const zapInput = document.getElementById('orc-zap');
+    const btnSalvar = document.getElementById('btn-salvar-cli-rapido');
+    
+    const clienteEncontrado = clientesGlobais.find(c => c.nome.toLowerCase() === termo.toLowerCase());
+    
+    if (clienteEncontrado) {
+        zapInput.value = clienteEncontrado.whatsapp || '';
+        btnSalvar.style.display = 'none'; // Já existe, esconde o botão
+    } else if (termo.trim().length > 2) {
+        btnSalvar.style.display = 'block'; // Não existe, mostra botão para salvar
+    } else {
+        btnSalvar.style.display = 'none';
+    }
+}
+
+async function salvarClienteRapido() {
+    const nome = document.getElementById('orc-cliente').value;
+    const whatsapp = document.getElementById('orc-zap').value;
+    if (!nome) return alert('Preencha o nome!');
+    
+    const btn = document.getElementById('btn-salvar-cli-rapido');
+    btn.disabled = true; btn.innerText = "Salvando...";
+
+    await db.from('clientes').insert([{ user_id: currentUser.id, nome, whatsapp }]);
+    await carregarClientes(); // Atualiza a lista global
+    
+    btn.style.display = 'none';
+    btn.disabled = false;
+    btn.innerText = "💾 Salvar como Novo Cliente";
+    alert("✅ Cliente salvo com sucesso no banco de dados!");
+}
+
+
 // ==========================================
-// MÓDULO 2: ESTOQUE (Com Busca e Edição)
+// MÓDULO 2: ESTOQUE (Com Peça vs Serviço)
 // ==========================================
 async function carregarEstoque() {
     const { data, error } = await db.from('estoque').select('*').order('nome');
     if (error) return console.error(error);
     
+    estoqueGlobal = data; 
+    
     const lista = document.getElementById('lista-estoque');
     const selectItemOS = document.getElementById('add-os-item');
     
+    // Selects do Orçamento Avulso (Separados)
+    const selectOrcPeca = document.getElementById('add-orc-peca');
+    const selectOrcServico = document.getElementById('add-orc-servico');
+    
     lista.innerHTML = '';
-    selectItemOS.innerHTML = '<option value="">Selecione do Estoque...</option>';
+    let optionsOS = '<option value="">Selecione do Estoque...</option>';
+    let optionsPeca = '<option value="">Selecione a Peça...</option>';
+    let optionsServico = '<option value="">Selecione o Serviço...</option>';
 
     data.forEach(item => {
+        let precoFix = item.preco ? parseFloat(item.preco).toFixed(2) : '0.00';
+        let custoFix = item.custo ? parseFloat(item.custo).toFixed(2) : '0.00';
+        
+        // Determina o tipo (Se não tiver, considera como Peça por padrão)
+        let tipoItem = item.tipo === 'Serviço' ? 'Serviço' : 'Peça';
+        let badgeTipo = tipoItem === 'Serviço' ? '<span class="badge badge-servico">🛠️ SERVIÇO</span>' : '<span class="badge badge-peca">📦 PEÇA</span>';
+        
         lista.innerHTML += `
             <div class="list-item item-estoque">
                 <div>
+                    <div style="margin-bottom: 4px;">${badgeTipo}</div>
                     <strong>${item.nome}</strong><br>
-                    <small>Venda: R$ ${item.preco.toFixed(2)} | Custo: R$ ${item.custo.toFixed(2)}</small>
+                    <small>Venda: R$ ${precoFix} | Custo: R$ ${custoFix}</small>
                 </div>
                 <div class="item-actions">
-                    <button class="btn-small btn-outline" onclick="prepararEdicaoEstoque('${item.id}', '${item.nome}', ${item.preco}, ${item.custo}, '${item.garantia || ''}')">✏️</button>
+                    <button class="btn-small btn-outline" onclick="prepararEdicaoEstoque('${item.id}', '${item.nome}', ${item.preco}, ${item.custo}, '${item.garantia || ''}', '${tipoItem}')">✏️</button>
                     <button class="btn-small btn-danger" onclick="excluirEstoque('${item.id}')">X</button>
                 </div>
             </div>`;
             
-        selectItemOS.innerHTML += `<option value="${item.id}">${item.nome} - R$ ${item.preco.toFixed(2)}</option>`;
+        let optionStr = `<option value="${item.id}">${item.nome} - R$ ${precoFix}</option>`;
+        optionsOS += optionStr;
+        
+        // Separação Inteligente na aba de orçamentos
+        if (tipoItem === 'Serviço') {
+            optionsServico += optionStr;
+        } else {
+            optionsPeca += optionStr;
+        }
     });
+    
+    selectItemOS.innerHTML = optionsOS;
+    selectOrcPeca.innerHTML = optionsPeca;
+    selectOrcServico.innerHTML = optionsServico;
 }
 
 function filtrarEstoque() {
@@ -181,12 +257,13 @@ function filtrarEstoque() {
     });
 }
 
-function prepararEdicaoEstoque(id, nome, preco, custo, garantia) {
+function prepararEdicaoEstoque(id, nome, preco, custo, garantia, tipo) {
     estoqueEditId = id;
     document.getElementById('est-nome').value = nome;
     document.getElementById('est-preco').value = preco;
     document.getElementById('est-custo').value = custo;
     document.getElementById('est-garantia').value = garantia;
+    document.getElementById('est-tipo').value = tipo;
     
     document.getElementById('titulo-form-estoque').innerText = "Editar Item";
     document.getElementById('btn-salvar-est').innerText = "Atualizar Item";
@@ -200,6 +277,7 @@ function cancelarEdicaoEstoque() {
     document.getElementById('est-preco').value = "";
     document.getElementById('est-custo').value = "";
     document.getElementById('est-garantia').value = "";
+    document.getElementById('est-tipo').value = "Peça";
     
     document.getElementById('titulo-form-estoque').innerText = "Novo Item / Serviço";
     document.getElementById('btn-salvar-est').innerText = "Cadastrar Item";
@@ -211,6 +289,7 @@ async function salvarEstoque() {
     const preco = parseFloat(document.getElementById('est-preco').value) || 0;
     const custo = parseFloat(document.getElementById('est-custo').value) || 0;
     const garantia = document.getElementById('est-garantia').value;
+    const tipo = document.getElementById('est-tipo').value;
     
     if (!nome || preco <= 0) return alert('Preencha nome e preço válido!');
 
@@ -218,9 +297,9 @@ async function salvarEstoque() {
     btn.disabled = true; btn.innerText = "Salvando...";
 
     if (estoqueEditId) {
-        await db.from('estoque').update({ nome, preco, custo, garantia }).eq('id', estoqueEditId);
+        await db.from('estoque').update({ nome, preco, custo, garantia, tipo }).eq('id', estoqueEditId);
     } else {
-        await db.from('estoque').insert([{ user_id: currentUser.id, nome, preco, custo, garantia }]);
+        await db.from('estoque').insert([{ user_id: currentUser.id, nome, preco, custo, garantia, tipo }]);
     }
     
     cancelarEdicaoEstoque();
@@ -234,6 +313,27 @@ async function excluirEstoque(id) {
     carregarEstoque();
 }
 
+// Cadastro Rápido de Peça via Aba Orçamentos
+function mostrarCadastroPecaRapido() {
+    document.getElementById('box-nova-peca').style.display = 'block';
+}
+
+async function salvarPecaRapida() {
+    const nome = document.getElementById('rapido-peca-nome').value;
+    const preco = parseFloat(document.getElementById('rapido-peca-preco').value) || 0;
+    
+    if (!nome || preco <= 0) return alert('Preencha nome e preço!');
+    
+    // Insere como Peça (sem custo ou garantia definidos, para jogo rápido)
+    await db.from('estoque').insert([{ user_id: currentUser.id, nome, preco, custo: 0, garantia: '', tipo: 'Peça' }]);
+    await carregarEstoque(); // Atualiza as listas
+    
+    document.getElementById('rapido-peca-nome').value = '';
+    document.getElementById('rapido-peca-preco').value = '';
+    document.getElementById('box-nova-peca').style.display = 'none';
+    
+    alert("✅ Peça cadastrada! Ela já está disponível na lista de seleção.");
+}
 
 // ==========================================
 // MÓDULO 3: ORDENS DE SERVIÇO (OS)
@@ -283,16 +383,13 @@ function voltarListaOS() {
     osAtual = null;
     document.getElementById('os-detalhes-view').style.display = 'none';
     document.getElementById('os-base-view').style.display = 'block';
-    carregarListaOS(); // Atualiza a lista caso algo tenha mudado
 }
 
 async function abrirOS(id) {
     const { data, error } = await db.from('ordens_servico').select('*, clientes(nome, whatsapp)').eq('id', id).single();
     if (error) return;
-    
     osAtual = data;
     
-    // Troca as telas suavemente sem destruir o HTML base
     document.getElementById('os-base-view').style.display = 'none';
     document.getElementById('os-detalhes-view').style.display = 'block';
     
@@ -311,28 +408,29 @@ async function atualizarStatusOS() {
 }
 
 async function carregarItensOS() {
-    const { data } = await db.from('os_itens').select('*, estoque(nome)').eq('os_id', osAtual.id);
-    
+    const { data } = await db.from('os_itens').select('*, estoque(*)').eq('os_id', osAtual.id);
     const lista = document.getElementById('lista-itens-os');
     lista.innerHTML = '';
     
     let total = 0;
-    osAtual.itens = data; // Guardamos na variável global para o PDF e Zap
+    osAtual.itens = data; 
     
     data.forEach(item => {
         total += item.subtotal;
+        let tipoItem = item.estoque.tipo === 'Serviço' ? 'Serviço' : 'Peça';
+        let badgeTipo = tipoItem === 'Serviço' ? '<span class="badge badge-servico">🛠️</span>' : '<span class="badge badge-peca">📦</span>';
+        
         lista.innerHTML += `
             <div class="list-item" style="padding: 8px 0;">
                 <div>
-                    <strong style="font-size: 14px;">${item.estoque.nome}</strong><br>
+                    <strong style="font-size: 14px;">${badgeTipo} ${item.estoque.nome}</strong><br>
                     <small>${item.quantidade}x R$ ${item.preco_unitario.toFixed(2)}</small>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <strong>R$ ${item.subtotal.toFixed(2)}</strong>
                     <button class="btn-small btn-danger" onclick="removerItemOS('${item.id}')">X</button>
                 </div>
-            </div>
-        `;
+            </div>`;
     });
     
     osAtual.valor_total = total;
@@ -346,14 +444,13 @@ async function adicionarItemNaOS() {
     
     if (!estoque_id || quantidade < 1) return;
     
-    const { data: itemEstoque } = await db.from('estoque').select('preco, garantia').eq('id', estoque_id).single();
+    const itemEstoque = estoqueGlobal.find(i => i.id === estoque_id);
     const subtotal = itemEstoque.preco * quantidade;
     
     await db.from('os_itens').insert([{ 
         os_id: osAtual.id, estoque_id, quantidade, preco_unitario: itemEstoque.preco, subtotal 
     }]);
     
-    // Atualiza a garantia da OS baseada na última peça
     if(itemEstoque.garantia) {
         osAtual.garantia_final = itemEstoque.garantia;
         await db.from('ordens_servico').update({ garantia_final: itemEstoque.garantia }).eq('id', osAtual.id);
@@ -367,7 +464,7 @@ async function removerItemOS(idItem) {
     carregarItensOS();
 }
 
-function enviarWhatsApp() {
+function enviarWhatsAppOS() {
     if(!osAtual) return;
     const celular = osAtual.clientes.whatsapp;
     if(!celular) return alert("Cliente sem WhatsApp cadastrado!");
@@ -376,8 +473,106 @@ function enviarWhatsApp() {
     window.open(`https://api.whatsapp.com/send?phone=55${celular.replace(/\D/g,'')}&text=${encodeURIComponent(texto)}`);
 }
 
+
 // ==========================================
-// MÓDULO 4: PERFIL DA EMPRESA E PDF
+// MÓDULO 4: ORÇAMENTO AVULSO (COM SOMA AUTOMÁTICA)
+// ==========================================
+function adicionarItemOrcamentoLocal(modo) {
+    let selectId = modo === 'Serviço' ? 'add-orc-servico' : 'add-orc-peca';
+    let qtdId = modo === 'Serviço' ? null : 'add-orc-peca-qtd'; // Serviço geralmente é qtd 1, mas deixei fixo pra simplificar
+    
+    const estoque_id = document.getElementById(selectId).value;
+    const quantidade = qtdId ? parseInt(document.getElementById(qtdId).value) : 1;
+    
+    if (!estoque_id || quantidade < 1) return alert("Selecione um item!");
+    
+    const itemEstoque = estoqueGlobal.find(i => i.id === estoque_id);
+    
+    orcamentoLocal.itens.push({
+        nome: itemEstoque.nome,
+        quantidade: quantidade,
+        preco: parseFloat(itemEstoque.preco),
+        subtotal: parseFloat(itemEstoque.preco) * quantidade,
+        tipo: itemEstoque.tipo === 'Serviço' ? 'Serviço' : 'Peça'
+    });
+    
+    atualizarUIOrcamentoLocal();
+    document.getElementById(selectId).value = ''; // Limpa o select
+    if(qtdId) document.getElementById(qtdId).value = 1;
+}
+
+function removerItemOrcamentoLocal(index) {
+    orcamentoLocal.itens.splice(index, 1);
+    atualizarUIOrcamentoLocal();
+}
+
+function atualizarUIOrcamentoLocal() {
+    const lista = document.getElementById('lista-itens-orcamento');
+    lista.innerHTML = '';
+    
+    let totalServicos = 0;
+    let totalPecas = 0;
+    
+    orcamentoLocal.itens.forEach((item, index) => {
+        if(item.tipo === 'Serviço') totalServicos += item.subtotal;
+        else totalPecas += item.subtotal;
+        
+        let badgeTipo = item.tipo === 'Serviço' ? '<span class="badge badge-servico">🛠️</span>' : '<span class="badge badge-peca">📦</span>';
+        
+        lista.innerHTML += `
+            <div class="list-item" style="padding: 8px 0;">
+                <div>
+                    <strong style="font-size: 14px;">${badgeTipo} ${item.nome}</strong><br>
+                    <small>${item.quantidade}x R$ ${item.preco.toFixed(2)}</small>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <strong>R$ ${item.subtotal.toFixed(2)}</strong>
+                    <button class="btn-small btn-danger" onclick="removerItemOrcamentoLocal(${index})">X</button>
+                </div>
+            </div>`;
+    });
+    
+    orcamentoLocal.valor_total = totalServicos + totalPecas;
+    document.getElementById('orc-total').innerText = orcamentoLocal.valor_total.toFixed(2);
+}
+
+function limparOrcamentoLocal() {
+    if(!confirm("Limpar todos os dados deste orçamento?")) return;
+    orcamentoLocal = { itens: [], valor_total: 0 };
+    document.getElementById('orc-cliente').value = '';
+    document.getElementById('orc-zap').value = '';
+    document.getElementById('orc-aparelho').value = '';
+    document.getElementById('orc-validade').value = '';
+    document.getElementById('orc-garantia-obs').value = '';
+    document.getElementById('orc-pagamento').value = '';
+    document.getElementById('btn-salvar-cli-rapido').style.display = 'none';
+    atualizarUIOrcamentoLocal();
+}
+
+function enviarWhatsAppOrcamento() {
+    const celular = document.getElementById('orc-zap').value;
+    if(!celular) return alert("Digite o WhatsApp do cliente para enviar!");
+    
+    const cliente = document.getElementById('orc-cliente').value || 'Cliente';
+    const aparelho = document.getElementById('orc-aparelho').value || 'Seu aparelho';
+    
+    let texto = `*Assistência Técnica*\nOlá ${cliente}!\n\nAqui está o orçamento solicitado para *${aparelho}*:\n\n`;
+    
+    orcamentoLocal.itens.forEach(item => {
+        let icone = item.tipo === 'Serviço' ? '🛠️' : '📦';
+        texto += `${icone} ${item.quantidade}x ${item.nome} (R$ ${item.subtotal.toFixed(2)})\n`;
+    });
+    
+    texto += `\n*Valor Total: R$ ${orcamentoLocal.valor_total.toFixed(2)}*`;
+    
+    const obsValidade = document.getElementById('orc-validade').value;
+    if(obsValidade) texto += `\nValidade: ${obsValidade}`;
+    
+    window.open(`https://api.whatsapp.com/send?phone=55${celular.replace(/\D/g,'')}&text=${encodeURIComponent(texto)}`);
+}
+
+// ==========================================
+// MÓDULO 5: PERFIL DA EMPRESA E PDF
 // ==========================================
 function carregarLogo(event) {
     const file = event.target.files[0];
@@ -398,9 +593,8 @@ function salvarPerfilLoja() {
         endereco: document.getElementById('loja-endereco').value,
         logo: document.getElementById('preview-logo').src
     };
-    
     localStorage.setItem('techos_perfil', JSON.stringify(perfil));
-    alert("✅ Perfil da Assistência salvo com sucesso! O cabeçalho dos seus orçamentos foi atualizado.");
+    alert("✅ Perfil da Assistência salvo com sucesso!");
 }
 
 function carregarPerfilLoja() {
@@ -422,7 +616,6 @@ function prepararCabecalhoPDF() {
     const perfilSalvo = localStorage.getItem('techos_perfil');
     if (perfilSalvo) {
         const perfil = JSON.parse(perfilSalvo);
-        
         document.getElementById('pdf-nome-empresa').innerText = perfil.nome || "TECH OS ASSISTÊNCIA";
         document.getElementById('pdf-cnpj-empresa').innerText = perfil.cnpj ? `CNPJ: ${perfil.cnpj}` : '';
         document.getElementById('pdf-endereco-empresa').innerText = perfil.endereco || '';
@@ -437,50 +630,100 @@ function prepararCabecalhoPDF() {
     }
 }
 
-function gerarPDF() {
-    if(!osAtual) return;
-    
-    // 1. Aplica a marca da empresa
+function gerarPDF(isOrcamentoRapido = false) {
     prepararCabecalhoPDF();
 
-    // 2. Preenche os dados da OS no molde oculto
-    document.getElementById('pdf-os-numero').innerText = `Orçamento / OS #${osAtual.id.substring(0,6).toUpperCase()}`;
-    document.getElementById('pdf-cliente').innerText = `${osAtual.clientes.nome} - ${osAtual.clientes.whatsapp || ''}`;
-    document.getElementById('pdf-aparelho').innerText = osAtual.aparelho;
-    document.getElementById('pdf-defeito').innerText = osAtual.defeito_relatado || 'Não informado';
-    
     let htmlTabela = '';
-    (osAtual.itens || []).forEach(item => {
-        htmlTabela += `
-            <tr>
-                <td style="padding: 10px; border-bottom: 1px solid #dcdde1;">${item.estoque.nome}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #dcdde1;">${item.quantidade}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #dcdde1;">R$ ${item.subtotal.toFixed(2)}</td>
-            </tr>
-        `;
-    });
+    let titulo_pdf, cliente_pdf, aparelho_pdf, defeito_pdf, total_pdf;
+    let validade_pdf = 'Não informada';
+    let garantia_pdf = 'Consultar condições';
+    let pagamento_pdf = 'A combinar';
+    let arquivo_nome = 'Orcamento.pdf';
+
+    if (isOrcamentoRapido) {
+        if(orcamentoLocal.itens.length === 0) return alert("Adicione peças ou serviços primeiro!");
+        
+        titulo_pdf = `Orçamento Comercial`;
+        cliente_pdf = document.getElementById('orc-cliente').value || 'Não informado';
+        aparelho_pdf = document.getElementById('orc-aparelho').value || 'Não informado';
+        document.getElementById('linha-defeito').style.display = 'none'; 
+        
+        orcamentoLocal.itens.forEach(item => {
+            let tipoTag = item.tipo === 'Serviço' ? 'Mão de Obra' : 'Peça';
+            htmlTabela += `<tr>
+                <td style="padding: 10px; border-bottom: 1px solid #dcdde1;">
+                    <strong>${item.nome}</strong><br>
+                    <span style="font-size: 11px; color: #64748b;">[${tipoTag}]</span>
+                </td>
+                <td style="padding: 10px; border-bottom: 1px solid #dcdde1; text-align: center;">${item.quantidade}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #dcdde1; text-align: right;">R$ ${item.subtotal.toFixed(2)}</td>
+            </tr>`;
+        });
+        
+        total_pdf = orcamentoLocal.valor_total;
+        
+        // Pega as observações customizadas
+        validade_pdf = document.getElementById('orc-validade').value || validade_pdf;
+        garantia_pdf = document.getElementById('orc-garantia-obs').value || garantia_pdf;
+        pagamento_pdf = document.getElementById('orc-pagamento').value || pagamento_pdf;
+        arquivo_nome = `Orcamento_${cliente_pdf.replace(/\s+/g, '_')}.pdf`;
+        
+    } else {
+        if(!osAtual) return;
+        
+        titulo_pdf = `Orçamento / OS #${osAtual.id.substring(0,6).toUpperCase()}`;
+        cliente_pdf = `${osAtual.clientes.nome} - ${osAtual.clientes.whatsapp || ''}`;
+        aparelho_pdf = osAtual.aparelho;
+        defeito_pdf = osAtual.defeito || 'Não informado';
+        
+        document.getElementById('linha-defeito').style.display = 'block';
+        document.getElementById('pdf-defeito').innerText = defeito_pdf;
+        
+        (osAtual.itens || []).forEach(item => {
+            let tipoTag = item.estoque.tipo === 'Serviço' ? 'Mão de Obra' : 'Peça';
+            htmlTabela += `<tr>
+                <td style="padding: 10px; border-bottom: 1px solid #dcdde1;">
+                    <strong>${item.estoque.nome}</strong><br>
+                    <span style="font-size: 11px; color: #64748b;">[${tipoTag}]</span>
+                </td>
+                <td style="padding: 10px; border-bottom: 1px solid #dcdde1; text-align: center;">${item.quantidade}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #dcdde1; text-align: right;">R$ ${item.subtotal.toFixed(2)}</td>
+            </tr>`;
+        });
+        
+        total_pdf = osAtual.valor_total;
+        garantia_pdf = osAtual.garantia_final || garantia_pdf;
+        arquivo_nome = `OS_${osAtual.clientes.nome.replace(/\s+/g, '_')}.pdf`;
+    }
+
+    // Injeta tudo no molde do HTML
+    document.getElementById('pdf-os-numero').innerText = titulo_pdf;
+    document.getElementById('pdf-cliente').innerText = cliente_pdf;
+    document.getElementById('pdf-aparelho').innerText = aparelho_pdf;
     document.getElementById('pdf-itens-tabela').innerHTML = htmlTabela;
-    document.getElementById('pdf-total').innerText = `R$ ${osAtual.valor_total.toFixed(2)}`;
-    document.getElementById('pdf-garantia').innerText = osAtual.garantia_final || 'Consultar';
+    document.getElementById('pdf-total').innerText = `R$ ${total_pdf.toFixed(2)}`;
     
-    // 3. Prepara e gera o PDF (Com a correção de tela branca)
+    // Injeta as observações do rodapé
+    document.getElementById('pdf-garantia').innerText = garantia_pdf;
+    document.getElementById('pdf-pagamento').innerText = pagamento_pdf;
+    document.getElementById('pdf-validade').innerText = validade_pdf;
+    
+    // Configura e Tira a Foto (Gerar PDF)
     const molde = document.getElementById('pdf-molde');
     const wrapper = document.getElementById('pdf-wrapper');
-    
-    wrapper.style.display = 'block'; // Mostra temporariamente
+    wrapper.style.display = 'block'; 
     
     let opt = {
-      margin:       0,
-      filename:     `Orcamento_${osAtual.clientes.nome.replace(/\s+/g, '_')}.pdf`,
+      margin:       0.3, // Deu uma margem maior para ficar mais bonito
+      filename:     arquivo_nome,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, scrollY: 0 }, // scrollY: 0 corrige o erro de rolagem do celular
+      html2canvas:  { scale: 2, scrollY: 0 }, 
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
 
-    // Dá um respiro de 100ms para o navegador desenhar a tela e a logo antes de bater a foto
     setTimeout(() => {
         html2pdf().set(opt).from(molde).save().then(() => {
-            wrapper.style.display = 'none'; // Esconde novamente
+            wrapper.style.display = 'none'; 
         });
     }, 100);
 }
