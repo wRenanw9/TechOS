@@ -3,181 +3,245 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TechOS | Assistência Técnica</title>
-    
-    <!-- FONTES -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
-    
-    <!-- SUPABASE E HTML2PDF (Para gerar o PDF) -->
+    <title>TechOS | Gestão de Assistência</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    
-    <!-- Configuração do banco (mesmo padrão do seu app anterior) -->
     <script src="config.js"></script>
-</head>
-<body id="body-app">
-    
-    <!-- TELA INICIAL (LOGIN) -->
-    <div id="auth-container" style="padding: 20px;">
-        <h1 style="margin-top: 20px; color: var(--primary);">TechOS</h1>
-        <p class="subtitle">Gestão Inteligente de Assistência Técnica</p>
+    <style>
+        :root {
+            --primary: #2563eb; --primary-hover: #1d4ed8; --dark: #1e293b; --light: #f8fafc;
+            --danger: #ef4444; --success: #10b981; --border: #e2e8f0; --text: #334155;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--light); color: var(--text); margin: 0; padding-bottom: 70px; }
+        * { box-sizing: border-box; }
         
-        <div class="card">
-            <h2 style="margin-bottom: 15px;">Acesso ao Sistema</h2>
-            <input type="email" id="auth-email" placeholder="E-mail">
-            <input type="password" id="auth-password" placeholder="Senha">
+        /* UTILITÁRIOS */
+        .card { background: white; padding: 20px; border-radius: 12px; border: 1px solid var(--border); margin: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+        h1, h2, h3 { margin-top: 0; color: var(--dark); }
+        input, select { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+        input:focus, select:focus { outline: none; border-color: var(--primary); }
+        
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; transition: 0.2s; }
+        button:hover { background: var(--primary-hover); }
+        .btn-danger { background: var(--danger); }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+        .btn-small { width: auto; padding: 6px 12px; font-size: 12px; }
+        
+        /* BUSCA E LISTAS */
+        .search-bar { position: relative; margin-bottom: 15px; }
+        .search-bar input { margin-bottom: 0; background: var(--light); }
+        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); }
+        .list-item:last-child { border-bottom: none; }
+        .item-actions { display: flex; gap: 8px; }
+
+        /* NAVEGAÇÃO SUPERIOR E INFERIOR */
+        .top-bar { background: white; padding: 15px; border-bottom: 1px solid var(--border); text-align: center; position: sticky; top: 0; z-index: 10; font-weight: bold; color: var(--primary); font-size: 18px; }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: white; border-top: 1px solid var(--border); display: flex; justify-content: space-around; padding: 10px 0; z-index: 10; }
+        .nav-item { color: var(--text); text-align: center; font-size: 12px; cursor: pointer; flex: 1; }
+        .nav-item.active { color: var(--primary); font-weight: bold; }
+
+        .page-view { display: none; animation: fadeIn 0.3s; }
+        .page-view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* PDF MOLDE INVISÍVEL */
+        #pdf-wrapper { display: none; background: white; padding: 20px; width: 800px; color: black; }
+        .pdf-header { display: flex; align-items: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 15px; }
+        .pdf-logo { max-width: 100px; max-height: 80px; margin-right: 20px; }
+        .pdf-tabela { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .pdf-tabela th, .pdf-tabela td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    </style>
+</head>
+<body>
+
+    <!-- TELA DE LOGIN -->
+    <div id="auth-view" style="padding: 20px; text-align: center; margin-top: 50px;">
+        <h1 style="color: var(--primary); font-size: 32px; margin-bottom: 5px;">TechOS</h1>
+        <p style="color: var(--text); margin-bottom: 30px;">Gestão de Assistência Técnica</p>
+        <div class="card" style="text-align: left;">
+            <h3>Acesso ao Sistema</h3>
+            <input type="email" id="email" placeholder="E-mail de acesso">
+            <input type="password" id="senha" placeholder="Senha">
             <button onclick="fazerLogin()">Entrar</button>
-            <div id="auth-msg" style="margin-top: 15px; font-size: 14px; text-align: center;"></div>
+            <p id="msg-login" style="text-align: center; color: var(--danger); font-size: 14px; margin-top: 15px;"></p>
         </div>
     </div>
 
-    <!-- APLICATIVO PRINCIPAL -->
-    <div id="app-container" style="display: none;">
-        
-        <div class="top-bar">
-            <h1 id="top-bar-title">TechOS</h1>
-            <div class="top-actions">
-                <div class="status-nuvem" id="status-db">Online</div>
-                <button class="btn-sair" onclick="fazerLogout()">Sair</button>
-            </div>
-        </div>
+    <!-- APP PRINCIPAL -->
+    <div id="app-view" style="display: none;">
+        <div class="top-bar">TechOS Painel</div>
 
-        <!-- ABA 1: PAINEL (DASHBOARD) -->
-        <div id="view-dashboard" class="page-view active">
-            <h2>Resumo Rápido</h2>
-            <div class="dash-grid">
-                <div class="dash-card">
-                    <div class="dash-titulo">OS Abertas</div>
-                    <div class="dash-valor" id="dash-os-abertas">0</div>
-                </div>
-                <div class="dash-card">
-                    <div class="dash-titulo">Aguardando Aprovação</div>
-                    <div class="dash-valor" style="color: var(--warning);" id="dash-os-orcamento">0</div>
+        <!-- ABA: CLIENTES -->
+        <div id="view-clientes" class="page-view active">
+            <div class="card">
+                <h3 id="titulo-form-cliente">Novo Cliente</h3>
+                <input type="text" id="cli-nome" placeholder="Nome do Cliente">
+                <input type="tel" id="cli-zap" placeholder="WhatsApp (DDD + Número)">
+                <div style="display: flex; gap: 10px;">
+                    <button id="btn-salvar-cli" onclick="salvarCliente()">Cadastrar Cliente</button>
+                    <button id="btn-cancelar-cli" onclick="cancelarEdicaoCliente()" class="btn-outline" style="display:none;">Cancelar</button>
                 </div>
             </div>
-        </div>
-
-        <!-- ABA 2: CLIENTES -->
-        <div id="view-clientes" class="page-view">
             <div class="card">
-                <h2>Novo Cliente</h2>
-                <input type="text" id="cliente-nome" placeholder="Nome do Cliente">
-                <input type="text" id="cliente-whatsapp" placeholder="WhatsApp (Ex: 71999999999)">
-                <button onclick="salvarCliente()">Salvar Cliente</button>
-            </div>
-            <div class="card">
-                <h2>Meus Clientes</h2>
-                <div id="lista-clientes">Carregando...</div>
+                <h3>Meus Clientes</h3>
+                <div class="search-bar">
+                    <input type="text" id="busca-cliente" placeholder="🔍 Buscar cliente..." onkeyup="filtrarClientes()">
+                </div>
+                <div id="lista-clientes"></div>
             </div>
         </div>
 
-        <!-- ABA 3: ESTOQUE (PEÇAS E SERVIÇOS) -->
+        <!-- ABA: ESTOQUE -->
         <div id="view-estoque" class="page-view">
             <div class="card">
-                <h2>Cadastrar Item</h2>
-                <input type="text" id="estoque-nome" placeholder="Nome (Ex: SSD 480GB ou Formatação)">
-                <div class="linha-inputs">
-                    <select id="estoque-tipo">
-                        <option value="Peça">Peça</option>
-                        <option value="Serviço">Serviço</option>
-                    </select>
-                    <input type="number" id="estoque-garantia" placeholder="Garantia (Dias)" value="90">
+                <h3 id="titulo-form-estoque">Novo Item / Serviço</h3>
+                <input type="text" id="est-nome" placeholder="Nome da Peça ou Serviço">
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" id="est-custo" placeholder="Custo (R$)">
+                    <input type="number" id="est-preco" placeholder="Venda (R$)">
                 </div>
-                <div class="linha-inputs">
-                    <input type="number" id="estoque-custo" placeholder="Custo R$">
-                    <input type="number" id="estoque-venda" placeholder="Venda R$">
+                <input type="text" id="est-garantia" placeholder="Tempo de Garantia (Ex: 90 dias)">
+                <div style="display: flex; gap: 10px;">
+                    <button id="btn-salvar-est" onclick="salvarEstoque()">Cadastrar Item</button>
+                    <button id="btn-cancelar-est" onclick="cancelarEdicaoEstoque()" class="btn-outline" style="display:none;">Cancelar</button>
                 </div>
-                <button onclick="salvarEstoque()">Salvar no Estoque</button>
             </div>
             <div class="card">
-                <h2>Itens Cadastrados</h2>
-                <div id="lista-estoque">Carregando...</div>
+                <h3>Itens Cadastrados</h3>
+                <div class="search-bar">
+                    <input type="text" id="busca-estoque" placeholder="🔍 Buscar no estoque..." onkeyup="filtrarEstoque()">
+                </div>
+                <div id="lista-estoque"></div>
             </div>
         </div>
 
-        <!-- ABA 4: ORDENS DE SERVIÇO (OS) -->
+        <!-- ABA: ORDEM DE SERVIÇO (DIVIDIDA EM 2 PARA CORRIGIR O BOTÃO VOLTAR) -->
         <div id="view-os" class="page-view">
+            
+            <!-- SUBCONTÊINER: LISTA E CADASTRO -->
+            <div id="os-base-view">
+                <div class="card">
+                    <h3>Abrir Nova OS</h3>
+                    <select id="os-cliente"><option value="">Selecione o Cliente...</option></select>
+                    <input type="text" id="os-aparelho" placeholder="Aparelho / Modelo">
+                    <input type="text" id="os-defeito" placeholder="Defeito Relatado">
+                    <button onclick="gerarOS()">Gerar OS</button>
+                </div>
+                <div class="card">
+                    <h3>Ordens em Andamento</h3>
+                    <div id="lista-os"></div>
+                </div>
+            </div>
+
+            <!-- SUBCONTÊINER: DETALHES DA OS -->
+            <div id="os-detalhes-view" style="display: none;">
+                <div class="card" style="background: var(--dark); color: white;">
+                    <button onclick="voltarListaOS()" style="background: white; color: var(--dark); margin-bottom: 15px;">⬅️ Voltar para Lista</button>
+                    <h2 style="color: white; margin-bottom: 5px;">OS <span id="det-os-id">#000</span></h2>
+                    <p style="margin: 0;"><strong>Cliente:</strong> <span id="det-os-cliente">...</span></p>
+                    <p style="margin: 5px 0 15px 0;"><strong>Aparelho:</strong> <span id="det-os-aparelho">...</span></p>
+                    
+                    <select id="det-os-status" onchange="atualizarStatusOS()" style="background: white; color: black; font-weight: bold;">
+                        <option value="Aguardando Avaliação">Aguardando Avaliação</option>
+                        <option value="Aguardando Peça">Aguardando Peça</option>
+                        <option value="Pronto">Pronto</option>
+                        <option value="Entregue">Entregue</option>
+                    </select>
+                </div>
+
+                <div class="card">
+                    <h3>Adicionar Serviço/Peça</h3>
+                    <div style="display: flex; gap: 10px;">
+                        <select id="add-os-item" style="flex: 2;"><option value="">Selecione do Estoque...</option></select>
+                        <input type="number" id="add-os-qtd" value="1" style="flex: 1;">
+                    </div>
+                    <button onclick="adicionarItemNaOS()">Adicionar à OS</button>
+                </div>
+
+                <div class="card">
+                    <h3>Itens do Orçamento</h3>
+                    <div id="lista-itens-os"></div>
+                    <h2 style="text-align: right; margin-top: 15px; color: var(--primary);">Total: R$ <span id="det-os-total">0.00</span></h2>
+                </div>
+
+                <div class="card" style="display: flex; gap: 10px;">
+                    <button onclick="gerarPDF()" style="background: var(--dark);">📄 Exportar PDF</button>
+                    <button onclick="enviarWhatsApp()" style="background: var(--success);">💬 WhatsApp</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA: MINHA LOJA (PERFIL PARA O PDF) -->
+        <div id="view-loja" class="page-view">
             <div class="card">
-                <h2>Abrir Nova OS</h2>
-                <select id="os-cliente"><!-- Preenchido via JS --></select>
-                <input type="text" id="os-aparelho" placeholder="Aparelho (Ex: Notebook Dell)">
-                <input type="text" id="os-defeito" placeholder="Defeito Relatado">
-                <button onclick="abrirOS()">Gerar Ordem de Serviço</button>
+                <h3>Perfil da Assistência (Cabeçalho do PDF)</h3>
+                
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <img id="preview-logo" src="" style="display: none; max-width: 150px; max-height: 100px; margin: 0 auto; border: 1px solid var(--border); border-radius: 8px;">
+                </div>
+                
+                <label style="font-size: 12px; font-weight: bold;">Logomarca (Upload):</label>
+                <input type="file" id="loja-logo" accept="image/*" onchange="carregarLogo(event)">
+                
+                <input type="text" id="loja-nome" placeholder="Nome da Assistência">
+                <input type="text" id="loja-cnpj" placeholder="CNPJ / CPF">
+                <input type="text" id="loja-endereco" placeholder="Endereço Completo">
+                
+                <button onclick="salvarPerfilLoja()">Salvar Dados da Empresa</button>
             </div>
             
             <div class="card">
-                <h2>Gestão de OS</h2>
-                <div id="lista-os">Carregando...</div>
+                <button onclick="fazerLogout()" class="btn-danger">Sair do Sistema</button>
             </div>
         </div>
 
-        <!-- NAVEGAÇÃO INFERIOR -->
-        <nav class="bottom-nav">
-            <div class="nav-item active" onclick="mudarAba('view-dashboard')" id="nav-dashboard">
-                <div class="nav-icon">📊</div>
-                <span>Painel</span>
-            </div>
-            <div class="nav-item" onclick="mudarAba('view-clientes')" id="nav-clientes">
-                <div class="nav-icon">👥</div>
-                <span>Clientes</span>
-            </div>
-            <div class="nav-item" onclick="mudarAba('view-estoque')" id="nav-estoque">
-                <div class="nav-icon">📦</div>
-                <span>Estoque</span>
-            </div>
-            <div class="nav-item" onclick="mudarAba('view-os')" id="nav-os">
-                <div class="nav-icon">📋</div>
-                <span>Ordens (OS)</span>
-            </div>
-        </nav>
+        <div class="bottom-nav">
+            <div class="nav-item active" onclick="mudarAba('view-clientes', this)">👥<br>Clientes</div>
+            <div class="nav-item" onclick="mudarAba('view-estoque', this)">📦<br>Estoque</div>
+            <div class="nav-item" onclick="mudarAba('view-os', this)">🔧<br>Ordens (OS)</div>
+            <div class="nav-item" onclick="mudarAba('view-loja', this)">🏢<br>Minha Loja</div>
+        </div>
     </div>
 
-    <!-- ========================================== -->
-    <!-- MOLDE OCULTO PARA GERAÇÃO DO PDF (A4)      -->
-    <!-- ========================================== -->
-    <div style="display: none;">
-        <div id="pdf-molde" style="padding: 40px; background: white; color: black; font-family: Arial, sans-serif;">
-            <div style="border-bottom: 3px solid #2c3e50; padding-bottom: 10px; margin-bottom: 20px;">
-                <h1 style="color: #2c3e50; margin: 0; font-size: 24pt;">TechOS - Assistência</h1>
-                <p style="margin: 5px 0 0 0; color: #7f8c8d; font-size: 12pt;" id="pdf-os-numero">Orçamento #000</p>
-            </div>
+    <!-- MOLDE DO PDF (ESCONDIDO) -->
+    <div id="pdf-wrapper">
+        <div id="pdf-molde" style="padding: 30px; font-family: Arial, sans-serif;">
             
-            <table style="width: 100%; margin-bottom: 20px; font-size: 12pt;">
-                <tr><td style="font-weight: bold; width: 100px;">Cliente:</td><td id="pdf-cliente">...</td></tr>
-                <tr><td style="font-weight: bold;">Aparelho:</td><td id="pdf-aparelho">...</td></tr>
-                <tr><td style="font-weight: bold;">Defeito:</td><td id="pdf-defeito">...</td></tr>
-            </table>
+            <!-- CABEÇALHO INJETÁVEL -->
+            <div class="pdf-header">
+                <img id="pdf-logo-empresa" src="" class="pdf-logo" style="display: none;">
+                <div>
+                    <h2 id="pdf-nome-empresa" style="margin: 0; color: #1e293b;">TECH OS ASSISTÊNCIA</h2>
+                    <p id="pdf-cnpj-empresa" style="margin: 5px 0 0 0; font-size: 14px; color: #64748b;"></p>
+                    <p id="pdf-endereco-empresa" style="margin: 5px 0 0 0; font-size: 14px; color: #64748b;"></p>
+                </div>
+            </div>
 
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12pt;">
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 id="pdf-os-numero" style="margin-top: 0;">Orçamento</h3>
+                <p><strong>Cliente:</strong> <span id="pdf-cliente"></span></p>
+                <p><strong>Aparelho:</strong> <span id="pdf-aparelho"></span></p>
+                <p style="margin-bottom: 0;"><strong>Defeito Relatado:</strong> <span id="pdf-defeito"></span></p>
+            </div>
+
+            <table class="pdf-tabela">
                 <thead>
-                    <tr style="background-color: #2c3e50; color: white; text-align: left;">
-                        <th style="padding: 10px;">Item / Serviço</th>
-                        <th style="padding: 10px;">Qtd</th>
-                        <th style="padding: 10px;">Subtotal</th>
+                    <tr style="background: #e2e8f0;">
+                        <th>Item / Serviço</th>
+                        <th>Qtd</th>
+                        <th>Subtotal</th>
                     </tr>
                 </thead>
-                <tbody id="pdf-itens-tabela">
-                    <!-- Preenchido via JS -->
-                </tbody>
-                <tfoot>
-                    <tr style="background-color: #ecf0f1; font-weight: bold; font-size: 14pt;">
-                        <td colspan="2" style="text-align: right; padding: 10px;">TOTAL:</td>
-                        <td style="padding: 10px;" id="pdf-total">R$ 0,00</td>
-                    </tr>
-                </tfoot>
+                <tbody id="pdf-itens-tabela"></tbody>
             </table>
 
-            <div style="background-color: #e8f6f3; border-left: 4px solid #1abc9c; padding: 12px; font-size: 11pt;">
-                <strong>🛡️ Garantia:</strong> <span id="pdf-garantia">90 dias</span><br>
-                <em>Válida a partir da retirada. Não cobre mau uso ou danos físicos.</em>
+            <div style="margin-top: 30px; text-align: right;">
+                <p><strong>Garantia:</strong> <span id="pdf-garantia"></span></p>
+                <h2 style="color: #2563eb;">Total: <span id="pdf-total"></span></h2>
             </div>
         </div>
     </div>
 
-    <!-- MOTOR DO APP -->
     <script src="app.js"></script>
 </body>
 </html>
