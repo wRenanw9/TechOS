@@ -451,16 +451,23 @@ function gerarPDF() {
     const molde = document.getElementById('pdf-molde');
     const wrapper = molde.parentElement;
     
-    wrapper.style.display = 'block'; // Mostra temporariamente para a biblioteca conseguir ler o tamanho
+    wrapper.style.display = 'block'; // Mostra temporariamente
     
     let opt = {
       margin:       0,
       filename:     `Orcamento_${osAtual.clientes.nome.replace(/\s+/g, '_')}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2 },
+      html2canvas:  { scale: 2, scrollY: 0 }, // scrollY: 0 corrige o erro de tela branca ao rolar a página no celular
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
 
+    // Dá um respiro de 100ms para o navegador "pintar" a tela antes de tirar a foto
+    setTimeout(() => {
+        html2pdf().set(opt).from(molde).save().then(() => {
+            wrapper.style.display = 'none'; // Esconde o molde novamente após o download
+        });
+    }, 100);
+}
     html2pdf().set(opt).from(molde).save().then(() => {
         wrapper.style.display = 'none'; // Esconde o molde novamente após o download
     });
